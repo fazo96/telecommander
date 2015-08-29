@@ -6,6 +6,7 @@ process.env.LOGGER_FILE = cfgDir+'log'
 
 var os = require('os')
 var fs = require('fs')
+var moment = require('moment')
 var blessed = require('blessed')
 
 try { fs.makeDirSync(cfgDir,'0770') } catch (e) { }
@@ -79,11 +80,14 @@ screen.append(chats);
 screen.append(cmdline);
 screen.append(msgBox[statusWindow]);
 
-// Contacts holds all the data about downloaded contacts
+// Contacts holds all the contacts data
 var contacts = { }
+// Groups hold all the data about groups
+var groups = { }
 // nameToUid is used to match a name to its user id (for the contact list)
 var nameToUid = { }
 
+var state // keeps track of the last time the client was updated
 var client // used to talk with telegram
 var phone // our phone number
 var code // our phone code
@@ -151,21 +155,31 @@ chats.on('select',function(selected){
   log('SELECT:',selected.content)
   msgBox[selectedWindow].hide()
   selectedWindow = selected.content;
-  if(!msgBox[selectedWindow]){
-    msgBox[selectedWindow] = mkBox()
-    screen.append(msgBox[selectedWindow])
-  }
-  var uid = nameToUid[selectedWindow]
-  if(uid != undefined){
-    // Is a real user: download messages and stuff
-    getMessages(uid,msgBox[selectedWindow]) 
-  }
-  msgBox[selectedWindow].show() 
+  var newb = getMsgBox(selectedWindow)
+  newb.show() 
 })
+
+// Get msgBox for given chat, create if not exists
+function getMsgBox(chat){
+  // Automatically convert ids to names
+  if(contacts[chat]) chat = contacts[chat].user.id
+  if(groups[chat]); // To be implemented
+  if(!msgBox[chat]){
+    log('Generating window: "'+chat+'"')
+    msgBox[chat] = mkBox()
+    screen.append(msgBox[chat])
+    var uid = nameToUid[chat]
+    if(uid != undefined){
+      // Is a real user: download messages and stuff
+      getMessages(uid,msgBox[chat]) 
+    }
+  }
+  return msgBox[chat]
+}
 
 // What happens when the user submits a command in the prompt
 cmdline.on('submit',function(value){
-  msgBox[selectedWindow].add('< '+value)
+  msgBox[statusWindow].add('< '+value)
   if(nameToUid[selectedWindow] == undefined){
     command(value)
   } else {
@@ -237,7 +251,6 @@ function connect(){
       })
     } else {
       log('Authkey loaded from disk. Should be ready to go.')
-      log('Authkey:',app.authKey) 
       whenReady()
     }
   })
@@ -257,37 +270,92 @@ function whenReady(){
 // Downloads stuff
 function downloadData(){
   log('Downloading data...')
+  
   client.contacts.getContacts('',function(cont){
-    //log('\nContacts:\n',JSON.stringify(cont)+'\n')
     chats.clearItems()
     chats.add(statusWindow)
     cont.users.list.forEach(function(user,index){
-      contacts[user.id] = user
-      var name = user.first_name + ' ' + user.last_name + (user.username?' ('+user.username+')':'')
+      if(!contacts[user.id]) contacts[user.id] = {}
+      contacts[user.id].user = user
+      var name = getName(user.id)
       nameToUid[name] = user.id
-      chats.addItem(''+name)
-      log('Added user: '+user.id)
+      chats.addItem(name)
+      log('Added user:',user.id,'-',name)
     })
   })
+
   client.messages.getDialogs(0,0,10,function(dialogs){
-    log('\nDialogs:\n',dialogs.toPrintable()+'\n')
+    dialogs.dialogs.list.forEach(function(item){
+      if(item.peer.chat_id){ // is a group
+        groups[item.peer.chat_id] = item
+        log('Added group:',item.peer.chat_id) 
+      }
+    })
+  })
+
+  client.updates.getState(function(astate){
+    log('ADDING LISTENER FOR UPDATES')
+    client.registerOnUpdates(onUpdate)
+    log('Started receiving updates\nGot State:',astate.toPrintable())
   })
 }
 
-// Get message history with given id
-function getMessages(uid,window){
+// Called when the server sends an update
+function onUpdate(upd){
+  return
+  log('Got Update:',upd.toPrintable())
+  // Process update
+  if(update.message){
+    // It's a chat message
+    log('Writing chat message to ',update.from_id)
+    //appendMsg(update,getName(update.from_id))
+  }
+}
+
+function getName(uid){
+  var user = contacts[uid]
+  if(!contacts[uid])
+    return
+  else
+    user = contacts[uid].user
+  return user.first_name + ' ' + user.last_name + (user.username?' ('+user.username+')':'')
+}
+
+// Get message history with given id in the given box
+function getMessages(uid,box){
   if(!connected){
     return log('Uh cant get messages cuz not connected.....')
   }
+  box.add('Downloading message history for '+getName(uid))
   var peer = new telegramLink.type.InputPeerContact({ props: { user_id: uid } })
   client.messages.getHistory(peer,0,-1,20,function(res){
-    window.add('\nMessage History with',uid+':\n',res.toPrintable()) 
-    res.messages.list.reverse() 
+    //log(res.toPrintable())
+    var rbox = getMsgBox(getName(peer.user_id))
+    log('Got history for: '+getName(uid))
+    res.messages.list.sort(function(msg1,msg2){
+      return msg1.date - msg2.date
+    })
+    if(res.messages.list.length === 0)
+      return rbox.add('No messages.')
+    rbox.add('Printing...')
+    for(i in res.messages.list){
+      appendMsg(res.messages.list[i],rbox)
+    }
+    /*
     res.messages.list.forEach(function(msg){
       if(!msg.message) return;
-      window.add('> '+msg.message)
+      appendMsg(msg,rbox)
     })
+    */
   })
+}
+
+// Writes given telegram.link "message" object to given boxId
+function appendMsg(msg,toBoxId){
+  var from = msg.from_id
+  var date = moment.unix(msg.date).fromNow()
+  name = getName(from)
+  toBoxId.add(date+' | '+(name || from)+' > '+msg.message)
 }
 
 // Try to load key from disk
