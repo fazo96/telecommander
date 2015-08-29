@@ -24,6 +24,21 @@ screen.title = "Telecommander"
 var defaultStyle = {
   fg: 'white',
   border: { fg: 'gray' },
+  scrollbar: {
+    bg: 'blue',
+    fg: 'red'
+  }
+}
+
+function mkBox(){
+  return blessed.log({
+    right: 0,
+    width: '80%',
+    height: screen.height-3,
+    border: { type: 'line' },
+    scrollable: true,
+    style: defaultStyle
+  })
 }
 
 var chats = blessed.list({
@@ -35,15 +50,7 @@ var chats = blessed.list({
   mouse: true,
   style: defaultStyle,
 })
-chats.style.selected = { bg: 'black' }
-
-var msgs = blessed.log({
-  right: 0,
-  width: '80%',
-  height: screen.height-3,
-  border: { type: 'line' },
-  style: defaultStyle
-})
+chats.style.selected = { bg: 'blue' }
 
 var cmdline = blessed.textbox({
   inputOnFocus: true,
@@ -55,18 +62,21 @@ var cmdline = blessed.textbox({
   style: defaultStyle
 })
 
-screen.append(chats);
-screen.append(msgs);
-screen.append(cmdline);
+var msgBox = { "Status": mkBox() }
 
-var msgBox = { }
+screen.append(chats);
+screen.append(cmdline);
+screen.append(msgBox["Status"]);
+
 var contacts = { }
 
 var client,phone,code,phoneCodeHash,fullName,username,loginResult,uid,authKey
 var registered = false
+var selectedUser = "Status"
 
 function command(cmd){
-  cmdname = cmd.split(' ')[0]
+  cmdl = cmd.split(' ')
+  cmdname = cmdl[0]
 
   if(cmdname === 'phone'){
     phone = cmd.split(' ')[1]
@@ -86,7 +96,6 @@ function command(cmd){
     })
 
   } else if(cmdname === 'code'){
-    cmdl = cmd.split(' ')
     code = cmdl[1]
     name = cmdl[2]
     lastname = cmdl[3]
@@ -103,16 +112,43 @@ function command(cmd){
 
   } else if(cmdname === 'init'){
     whenReady()
+  } else if(cmdname === 'msg'){
+    var peer = new telegramLink.type.InputPeerContact({ props: { user_id: selectedUser} })
+    var randid = parseInt(Math.random() * 1000000000)
+    client.messages.sendMessage(peer,cmdl[1],randid,function(sent){
+      log('Send message:',cmdl[1],'to:',selectedUser+':',sent.toPrintable())
+    })
   }
 }
+chats.addItem('Status')
+chats.on('select',function(selected){
+  log('SELECT:',selected.content)
+  msgBox[selectedUser].hide()
+  selectedUser = selected.content;
+  //if(!isNaN(selectedUser)){ // Actual user, not utility window
+  if(!msgBox[selectedUser]){
+    msgBox[selectedUser] = mkBox()
+    screen.append(msgBox[selectedUser])
+  }
+  msgBox[selectedUser].show() 
+})
 
 cmdline.on('submit',function(value){
-  msgs.add('[ECHO] '+value)
-  command(value)
+  msgBox[selectedUser].add('[ECHO] '+value)
+  if(selectedUser == "Status"){
+    command(value)
+  } else {
+    // Send Message
+    var peer = new telegramLink.type.InputPeerContact({ props: { user_id: selectedUser} })
+    var randid = parseInt(Math.random() * 1000000000)
+    client.messages.sendMessage(peer,value,randid,function(sent){
+      log('Send message:',value,'to:',selectedUser+':',sent.toPrintable())
+      msgBox[selectedUser].add('You: '+value)
+    })
+  }
   cmdline.clearValue()
   cmdline.focus()
 })
-
 cmdline.focus()
 cmdline.key(['escape','C-c'], function(ch,key){
   if(client){
@@ -122,12 +158,13 @@ cmdline.key(['escape','C-c'], function(ch,key){
     })
   } else process.exit(0);
 });
+//cmdline.focus()
 screen.render();
 
 function log(){
   args = Array.prototype.slice.call(arguments)
   msg = args.join(' ')
-  msgs.add(msg)
+  msgBox["Status"].add(msg)
   logger.info(msg)
 }
 
@@ -178,11 +215,19 @@ function whenReady(){
 function downloadData(){
   log('Downloading data...')
   client.contacts.getContacts('',function(cont){
-    contacts = cont
-    log('\nContacts:\n',JSON.stringify(cont)+'\n')
+    //log('\nContacts:\n',JSON.stringify(cont)+'\n')
+    chats.clearItems()
+    chats.add("Status")
+    cont.users.list.forEach(function(user,index){
+      contacts[user.id] = user
+      chats.addItem(''+user.id)
+      log('Added user: '+user.id)
+    })
+    fs.writeFile(cfgDir+'contacts.json',JSON.stringify(cont.users.list[0]))
   })
   client.messages.getDialogs(0,-1,10,function(dialogs){
-    log('\nDialogs:\n',JSON.stringify(dialogs)+'\n')
+    //log('\nDialogs:\n',JSON.stringify(dialogs)+'\n')
+    fs.writeFile(cfgDir+'dialogs.json',JSON.stringify(dialogs))
   })
 }
 
