@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+// Prepare deps and fs
 var cfgDir = (process.env.HOME || process.env.USERPROFILE) + '/.config/telecommander/'
 process.env.LOGGER_FILE = cfgDir+'log'
 
@@ -14,6 +15,8 @@ getLogger.PROJECT_NAME = 'telecommander'
 var logger = getLogger('main')
 
 var telegramLink = require('telegram.link')()
+
+// Prepare blessed UI
 
 var screen = blessed.screen({
   smartCSR: true,
@@ -30,6 +33,7 @@ var defaultStyle = {
   }
 }
 
+// Function to create a log box
 function mkBox(){
   return blessed.log({
     right: 0,
@@ -41,6 +45,7 @@ function mkBox(){
   })
 }
 
+// Contact list window
 var chats = blessed.list({
   left: 0,
   top:0,
@@ -52,6 +57,7 @@ var chats = blessed.list({
 })
 chats.style.selected = { bg: 'blue' }
 
+// Command line prompt
 var cmdline = blessed.textbox({
   inputOnFocus: true,
   bottom: 0,
@@ -62,23 +68,43 @@ var cmdline = blessed.textbox({
   style: defaultStyle
 })
 
-var msgBox = { "Status": mkBox() }
+var statusWindow = "Status"
 
+// mgsBox holds the chat boxes for every list entry
+var msgBox = { }
+msgBox[statusWindow] = mkBox()
+
+// Add stuff to the screen
 screen.append(chats);
 screen.append(cmdline);
-screen.append(msgBox["Status"]);
+screen.append(msgBox[statusWindow]);
 
+// Contacts holds all the data about downloaded contacts
 var contacts = { }
+// nameToUid is used to match a name to its user id (for the contact list)
+var nameToUid = { }
 
-var client,phone,code,phoneCodeHash,fullName,username,loginResult,uid,authKey
-var registered = false
-var selectedUser = "Status"
+var client // used to talk with telegram
+var phone // our phone number
+var code // our phone code
+var phoneCodeHash // our phone code thingy that telegram wants
+var fullName
+var username
+var loginResult // Store here the server answer to the login
+var uid // our user id
+var authKey // our authorization key to access telegram
+var registered = false // keep track of wether the phone number is registered
+var connected = false // keep track of wether we are good to go and logged in
+var selectedWindow = statusWindow // the currently selected window
 
 function command(cmd){
   cmdl = cmd.split(' ')
   cmdname = cmdl[0]
 
-  if(cmdname === 'phone'){
+  if(cmdname === 'phone'){ // So the user can provide his phone numbah
+    if(connected){
+      return log("Silly user, you're already connected! We don't need that phone number")
+    }
     phone = cmd.split(' ')[1]
     client.auth.sendCode(phone,5,'en',function(result){
       log('Errors:',result.error_code,result.error_message)
@@ -95,7 +121,10 @@ function command(cmd){
       }
     })
 
-  } else if(cmdname === 'code'){
+  } else if(cmdname === 'code'){ // So the user can provide his phone code
+    if(connected){
+      return log("Silly user, you're already connected! We don't need that phone code")
+    }
     code = cmdl[1]
     name = cmdl[2]
     lastname = cmdl[3]
@@ -110,64 +139,76 @@ function command(cmd){
     if(registered) client.auth.signIn(phone,phoneCodeHash,code,cb)
     else client.auth.signUp(phone,phoneCodeHash,code,name,lastname,cb)
 
-  } else if(cmdname === 'init'){
-    whenReady()
-  } else if(cmdname === 'msg'){
-    var peer = new telegramLink.type.InputPeerContact({ props: { user_id: selectedUser} })
-    var randid = parseInt(Math.random() * 1000000000)
-    client.messages.sendMessage(peer,cmdl[1],randid,function(sent){
-      log('Send message:',cmdl[1],'to:',selectedUser+':',sent.toPrintable())
-    })
+  } else if(cmdname === 'msg'){ // Send a message
+    msg(cmdl[1],cmdl[2])
   }
 }
-chats.addItem('Status')
+chats.addItem(msgBox[statusWindow])
+screen.render();
+
+// What happens when a different window is selected
 chats.on('select',function(selected){
   log('SELECT:',selected.content)
-  msgBox[selectedUser].hide()
-  selectedUser = selected.content;
-  //if(!isNaN(selectedUser)){ // Actual user, not utility window
-  if(!msgBox[selectedUser]){
-    msgBox[selectedUser] = mkBox()
-    screen.append(msgBox[selectedUser])
+  msgBox[selectedWindow].hide()
+  selectedWindow = selected.content;
+  if(!msgBox[selectedWindow]){
+    msgBox[selectedWindow] = mkBox()
+    screen.append(msgBox[selectedWindow])
   }
-  msgBox[selectedUser].show() 
+  var uid = nameToUid[selectedWindow]
+  if(uid != undefined){
+    // Is a real user: download messages and stuff
+    getMessages(uid,msgBox[selectedWindow]) 
+  }
+  msgBox[selectedWindow].show() 
 })
 
+// What happens when the user submits a command in the prompt
 cmdline.on('submit',function(value){
-  msgBox[selectedUser].add('[ECHO] '+value)
-  if(selectedUser == "Status"){
+  msgBox[selectedWindow].add('< '+value)
+  if(nameToUid[selectedWindow] == undefined){
     command(value)
   } else {
     // Send Message
-    var peer = new telegramLink.type.InputPeerContact({ props: { user_id: selectedUser} })
-    var randid = parseInt(Math.random() * 1000000000)
-    client.messages.sendMessage(peer,value,randid,function(sent){
-      log('Send message:',value,'to:',selectedUser+':',sent.toPrintable())
-      msgBox[selectedUser].add('You: '+value)
-    })
+    msg(nameToUid[selectedWindow],value)
   }
   cmdline.clearValue()
   cmdline.focus()
 })
-cmdline.focus()
+
+cmdline.focus() // make sure prompt is focused
+
+// Catch ctrl-c or escape event and close program  
 cmdline.key(['escape','C-c'], function(ch,key){
-  if(client){
+  if(connected || client != undefined){
     log('Closing communications and shutting down...')
     client.end(function(){
       process.exit(0)
     })
   } else process.exit(0);
 });
-//cmdline.focus()
-screen.render();
 
+// Send a message
+function msg(uid,str){
+  if(!connected){
+    return log('Error: not ready to send messages')
+  }
+  var peer = new telegramLink.type.InputPeerContact({ props: { user_id: ''+uid } })
+  var randid = parseInt(Math.random() * 1000000000)
+  client.messages.sendMessage(peer,str,randid,function(sent){
+    log('Send message:','"'+str+'"','to:',selectedWindow+':',sent.toPrintable())
+  })
+}
+
+// Write something in the Status box
 function log(){
   args = Array.prototype.slice.call(arguments)
-  msg = args.join(' ')
-  msgBox["Status"].add(msg)
+  var msg = args.join(' ')
+  msgBox[statusWindow].add(msg)
   logger.info(msg)
 }
 
+// Prepare data to feed to telegramLink
 var app = {
   id: '42419',
   hash: '90a3c2cdbf9b391d9ed72c0639dc0786',
@@ -206,33 +247,51 @@ function connect(){
   })
 }
 
-// Download Contacts, ecc
+// Executed when connected and logged in
 function whenReady(){
   log('READY!')
+  connected = true
   downloadData()
 }
 
+// Downloads stuff
 function downloadData(){
   log('Downloading data...')
   client.contacts.getContacts('',function(cont){
     //log('\nContacts:\n',JSON.stringify(cont)+'\n')
     chats.clearItems()
-    chats.add("Status")
+    chats.add(statusWindow)
     cont.users.list.forEach(function(user,index){
       contacts[user.id] = user
-      chats.addItem(''+user.id)
+      var name = user.first_name + ' ' + user.last_name + (user.username?' ('+user.username+')':'')
+      nameToUid[name] = user.id
+      chats.addItem(''+name)
       log('Added user: '+user.id)
     })
-    fs.writeFile(cfgDir+'contacts.json',JSON.stringify(cont.users.list[0]))
   })
-  client.messages.getDialogs(0,-1,10,function(dialogs){
-    //log('\nDialogs:\n',JSON.stringify(dialogs)+'\n')
-    fs.writeFile(cfgDir+'dialogs.json',JSON.stringify(dialogs))
+  client.messages.getDialogs(0,0,10,function(dialogs){
+    log('\nDialogs:\n',dialogs.toPrintable()+'\n')
   })
 }
 
+// Get message history with given id
+function getMessages(uid,window){
+  if(!connected){
+    return log('Uh cant get messages cuz not connected.....')
+  }
+  var peer = new telegramLink.type.InputPeerContact({ props: { user_id: uid } })
+  client.messages.getHistory(peer,0,-1,20,function(res){
+    window.add('\nMessage History with',uid+':\n',res.toPrintable()) 
+    res.messages.list.reverse() 
+    res.messages.list.forEach(function(msg){
+      if(!msg.message) return;
+      window.add('> '+msg.message)
+    })
+  })
+}
+
+// Try to load key from disk
 var keyPath = cfgDir+'key'
-// Try loading key
 log('Checking disk for key...')
 fs.exists(keyPath,function(exists){
   if(exists){
