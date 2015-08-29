@@ -1,0 +1,19 @@
+{
+  "name": "telecommander",
+  "version": "0.1.0",
+  "description": "command line client for telegram",
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/fazo96/telecommander.git"
+  },
+  "author": "Enrico Fasoli (fazo96)",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/fazo96/telecommander/issues"
+  },
+  "homepage": "https://github.com/fazo96/telecommander#readme",
+  "dependencies": {
+    "blessed": "^0.1.80",
+    "telegram.link": "^0.6.3"
+  }
+}
