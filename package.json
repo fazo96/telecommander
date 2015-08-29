@@ -6,6 +6,9 @@
     "type": "git",
     "url": "git+ssh://git@github.com/fazo96/telecommander.git"
   },
+  "bin": {
+    "telecommander": "./telecommander.js"
+  },
   "author": "Enrico Fasoli (fazo96)",
   "license": "MIT",
   "bugs": {
