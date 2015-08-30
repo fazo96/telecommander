@@ -48,21 +48,6 @@ var defaultStyle = {
   }
 }
 
-// Function to create a log box
-function mkBox(){
-  var box = blessed.log({
-    right: 0,
-    width: '80%',
-    height: screen.height-3,
-    border: { type: 'line' },
-    scrollable: true,
-    draggable: true,
-    style: defaultStyle
-  })
-  box.hide()
-  return box
-}
-
 // Contact list window
 var chats = blessed.list({
   left: 0,
@@ -71,9 +56,25 @@ var chats = blessed.list({
   width: '20%',
   border: { type: 'line' },
   mouse: true,
+  invertSelected: false,
   style: defaultStyle,
 })
 chats.style.selected = { bg: 'blue' }
+
+// Function to create a log box
+function mkBox(){
+  var box = blessed.log({
+    right: 0,
+    width: '80%',
+    height: screen.height - cmdline.height,
+    border: { type: 'line' },
+    scrollable: true,
+    //draggable: true,
+    style: defaultStyle
+  })
+  box.hide()
+  return box
+}
 
 // Command line prompt
 var cmdline = blessed.textbox({
@@ -96,6 +97,17 @@ msgBox[statusWindow] = mkBox()
 screen.append(chats);
 screen.append(cmdline);
 screen.append(msgBox[statusWindow]);
+chats.addItem(msgBox[statusWindow])
+switchToBox(statusWindow)
+screen.on('resize',function(){
+  for(i in msgBox){
+    item = msgBox[i]
+    item.height = screen.height - cmdline.height
+  }
+  chats.height = screen.height - cmdline.height
+  screen.render()
+})
+screen.render()
 
 // Contacts holds all the contacts data
 var contacts = { }
@@ -112,6 +124,14 @@ var user = { } // holds data about current user
 var authKey // our authorization key to access telegram
 var connected = false // keep track of wether we are good to go and logged in
 var selectedWindow = statusWindow // the currently selected window
+
+// Write something in the Status box
+function log(){
+  args = Array.prototype.slice.call(arguments)
+  var msg = args.join(' ')
+  msgBox[statusWindow].add(msg)
+  logger.info(msg)
+}
 
 function command(cmd){
   cmdl = cmd.split(' ')
@@ -182,14 +202,10 @@ function command(cmd){
     // Log in finally
     if(user.registered) client.auth.signIn(user.phone,user.phoneCodeHash,code,cb)
     else client.auth.signUp(user.phone,user.phoneCodeHash,code,name,lastname,cb)
-
-  } else if(cmdname === 'msg'){ // Send a message
-    sendMsg(cmdl[1],cmdl[2])
+  } else {
+    log('Command not found.')
   }
 }
-chats.addItem(msgBox[statusWindow])
-switchToBox(statusWindow)
-screen.render();
 
 // What happens when a different window is selected
 chats.on('select',function(selected){
@@ -198,7 +214,8 @@ chats.on('select',function(selected){
 })
 
 function switchToBox(boxname){
-  msgBox[selectedWindow].hide()
+  if(selectedWindow && msgBox[selectedWindow])
+    msgBox[selectedWindow].hide()
   selectedWindow = boxname;
   var newb = getMsgBox(selectedWindow)
   newb.show()
@@ -228,9 +245,11 @@ cmdline.on('submit',function(value){
   if(selectedWindow === statusWindow || nameToObj(selectedWindow) === undefined){
     //log('Window:',selectedWindow,'Eval cmd:',value)
     command(value)
+  } else if(value.indexOf('//') === 0){
+    sendMsg(selectedWindow,value.substring(1))
+  } else if(value.indexOf('/') === 0){
+    command(value.substring(1))
   } else {
-    // Send Message
-    //log('sending message')
     sendMsg(selectedWindow,value)
   }
   cmdline.clearValue()
@@ -239,14 +258,18 @@ cmdline.on('submit',function(value){
 
 cmdline.focus() // make sure prompt is focused
 
-// Catch ctrl-c or escape event and close program
-cmdline.key(['escape','C-c'], function(ch,key){
+function quit(){
   if(connected || client != undefined){
     log('Closing communications and shutting down...')
     client.end(function(){
       process.exit(0)
     })
   } else process.exit(0);
+}
+
+// Catch ctrl-c or escape event and close program
+cmdline.key(['escape','C-c'], function(ch,key){
+  quit()
 });
 
 function nameToObj(name){
@@ -277,14 +300,6 @@ function sendMsg(name,str){
   client.messages.sendMessage(peer,str,randid,function(sent){
     log('Sent message:','"'+str+'"','to:',selectedWindow+':',sent.toPrintable())
   })
-}
-
-// Write something in the Status box
-function log(){
-  args = Array.prototype.slice.call(arguments)
-  var msg = args.join(' ')
-  msgBox[statusWindow].add(msg)
-  logger.info(msg)
 }
 
 // Connects to telegram
