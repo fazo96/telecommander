@@ -42,6 +42,7 @@ function mkBox(){
     height: screen.height-3,
     border: { type: 'line' },
     scrollable: true,
+    draggable: true,
     style: defaultStyle
   })
 }
@@ -87,17 +88,10 @@ var groups = { }
 // nameToUid is used to match a name to its user id (for the contact list)
 var nameToUid = { }
 
-var state // keeps track of the last time the client was updated
+var state = { } // keeps track of the telegram update state
 var client // used to talk with telegram
-var phone // our phone number
-var code // our phone code
-var phoneCodeHash // our phone code thingy that telegram wants
-var fullName
-var username
-var loginResult // Store here the server answer to the login
-var uid // our user id
+var user = { } // holds data about current user
 var authKey // our authorization key to access telegram
-var registered = false // keep track of wether the phone number is registered
 var connected = false // keep track of wether we are good to go and logged in
 var selectedWindow = statusWindow // the currently selected window
 
@@ -109,18 +103,27 @@ function command(cmd){
     if(connected){
       return log("Silly user, you're already connected! We don't need that phone number")
     }
-    phone = cmd.split(' ')[1]
-    client.auth.sendCode(phone,5,'en',function(result){
-      log('Errors:',result.error_code,result.error_message)
-      if(result.error_code) return  
-      log('Res:',JSON.stringify(result))
-      registered = result.phone_registered
-      phoneCodeHash = result.phone_code_hash
-      if(!registered){
+    user.phone = cmd.split(' ')[1]
+    var mindate = moment()
+    client.auth.sendCode(user.phone,5,'en',function(result){
+      if(result.err_code){
+        return log('Errors:',result.error_code,result.error_message)
+      }
+      //log('Res:',JSON.stringify(result))
+      user.registered = result.phone_registered
+      user.phoneCodeHash = result.phone_code_hash
+      function gmd(){
+        var m = moment()
+        m = m.subtract(m.diff(mindate))
+        return 'Please use a telegram code not older than '+m.fromNow(true)
+      }
+      if(!user.registered){
         log("Your number is not registered. The client will register your account with the Telegram service")
+        log(gmd()) 
         log('Ready for phone code, use command: "code <code> <name> <lastname>" to register')
       } else {
         log("Your number is already registered with telegram. The client will log in.")
+        log(gmd()) 
         log('Ready for phone code, use command: "code <code>" to login')
       }
     })
@@ -132,19 +135,38 @@ function command(cmd){
     code = cmdl[1]
     name = cmdl[2]
     lastname = cmdl[3]
-    if(((!name || !lastname) && !registered) || !code)
+    if(((!name || !lastname) && !user.registered) || !code)
       return log('insufficient arguments:',cmd)
     cb = function(result){
-      loginResult = result
-      log('Result:',JSON.stringify(result))
+      user.id = ''+result.user.id
+      user.phone = result.user.phone
+      user.phoneCodeHash = result.phone_code_hash
+      user.username = result.user.username
+      user.first_name = result.user.first_name
+      user.last_name = result.user.last_name
+      // Done, write user data and key to disk
+      log('Writing key to disk...')
+      fs.writeFile(cfgDir+'key',authKey,function(err){
+        if(err)
+          log('Could not write key to disk:',err)
+        else
+          log('key saved to disk')
+      })
+      log('Writing user info to disk...')
+      fs.writeFile(cfgDir+'user_data.json',JSON.stringify(user),function(err){
+        if(err)
+          log("ERROR: couldn't write user_data.json:",err)
+        else
+          log('user_data.json saved to disk with data:',JSON.stringify(user))
+      })
       whenReady()
     }
     // Log in finally
-    if(registered) client.auth.signIn(phone,phoneCodeHash,code,cb)
-    else client.auth.signUp(phone,phoneCodeHash,code,name,lastname,cb)
+    if(user.registered) client.auth.signIn(user.phone,user.phoneCodeHash,code,cb)
+    else client.auth.signUp(user.phone,user.phoneCodeHash,code,name,lastname,cb)
 
   } else if(cmdname === 'msg'){ // Send a message
-    msg(cmdl[1],cmdl[2])
+    sendMsg(cmdl[1],cmdl[2])
   }
 }
 chats.addItem(msgBox[statusWindow])
@@ -162,8 +184,12 @@ chats.on('select',function(selected){
 // Get msgBox for given chat, create if not exists
 function getMsgBox(chat){
   // Automatically convert ids to names
-  if(contacts[chat]) chat = contacts[chat].user.id
-  if(groups[chat]); // To be implemented
+  //if(contacts[chat]) chat = contacts[chat].user.id
+  //if(groups[chat]); // To be implemented
+  if(chat === undefined){
+    log('ERROR: asked for box for "undefined"!!')
+    return msgBox[statusWindow]
+  }
   if(!msgBox[chat]){
     log('Generating window: "'+chat+'"')
     msgBox[chat] = mkBox()
@@ -173,7 +199,7 @@ function getMsgBox(chat){
       // Is a real user: download messages and stuff
       getMessages(uid,msgBox[chat]) 
     }
-  }
+  } else log('Getting window','"'+chat+'"')
   return msgBox[chat]
 }
 
@@ -184,7 +210,7 @@ cmdline.on('submit',function(value){
     command(value)
   } else {
     // Send Message
-    msg(nameToUid[selectedWindow],value)
+    sendMsg(nameToUid[selectedWindow],value)
   }
   cmdline.clearValue()
   cmdline.focus()
@@ -203,7 +229,7 @@ cmdline.key(['escape','C-c'], function(ch,key){
 });
 
 // Send a message
-function msg(uid,str){
+function sendMsg(uid,str){
   if(!connected){
     return log('Error: not ready to send messages')
   }
@@ -239,14 +265,8 @@ function connect(){
       log('Creating authkey...')
       client.createAuthKey(function(auth){
         authKey = auth.key.encrypt('password') // I know sorry, but I'm testing. Will add security later, I promise
+        log('Created key')
         // Writes the new encrypted key to disk 
-        fs.writeFile(keyPath,authKey,function(err){
-          if(err)
-            log('Could not write key to disk:',err)
-          else
-            log('Done writing key to disk')
-        })
-        log('Created key, writing it to disk')
         log('ready for phone number, use command: phone <number>')
       })
     } else {
@@ -274,13 +294,13 @@ function downloadData(){
   client.contacts.getContacts('',function(cont){
     chats.clearItems()
     chats.add(statusWindow)
-    cont.users.list.forEach(function(user,index){
-      if(!contacts[user.id]) contacts[user.id] = {}
-      contacts[user.id].user = user
-      var name = getName(user.id)
-      nameToUid[name] = user.id
+    cont.users.list.forEach(function(u,index){
+      if(!contacts[u.id]) contacts[u.id] = {}
+      contacts[u.id].user = u
+      var name = getName(u.id)
+      nameToUid[name] = u.id
       chats.addItem(name)
-      log('Added user:',user.id,'-',name)
+      //log('Added user:',u.id,'-',name)
     })
   })
 
@@ -288,21 +308,32 @@ function downloadData(){
     dialogs.dialogs.list.forEach(function(item){
       if(item.peer.chat_id){ // is a group
         groups[item.peer.chat_id] = item
-        log('Added group:',item.peer.chat_id) 
+        //log('Added group:',item.peer.chat_id) 
       }
     })
   })
 
   client.updates.getState(function(astate){
-    log('ADDING LISTENER FOR UPDATES')
-    client.registerOnUpdates(onUpdate)
-    log('Started receiving updates\nGot State:',astate.toPrintable())
+    updateState(astate)
+    log(state.unreadCount,'unread messages')
+    log('Started receiving updates')
+    // Can't use registerOnUpdates because it's apparently broken
+    //client.registerOnUpdates(onUpdate)
+    setTimeout(downloadUpdates,1000)
   })
 }
 
-// Called when the server sends an update
+// Updates the current state
+function updateState(newstate){
+  state.pts = newstate.pts
+  state.qts = newstate.qts
+  state.date = newstate.date
+  state.sqp = newstate.seq
+  state.unreadCount = newstate.unread_count
+}
+
+// process an update
 function onUpdate(upd){
-  return
   log('Got Update:',upd.toPrintable())
   // Process update
   if(update.message){
@@ -312,13 +343,34 @@ function onUpdate(upd){
   }
 }
 
+function downloadUpdates(){
+  client.updates.getDifference(state.pts,state.date,state.qts,function(res){
+    log('Got Diff: ',res.toPrintable())
+    if(res.state){
+      updateState(res.state)
+    }
+    if(res.new_messages){
+      res.new_messages.list.forEach(function(msg){
+        if(!msg.message) return log('Empty message!',msg)
+        //log('Scheduling message: '+msg.message)
+        appendMsg(msg)
+      })
+    }
+    setTimeout(downloadUpdates,1000)
+  })
+}
+
 function getName(uid){
-  var user = contacts[uid]
+  var u
   if(!contacts[uid])
-    return
-  else
-    user = contacts[uid].user
-  return user.first_name + ' ' + user.last_name + (user.username?' ('+user.username+')':'')
+    if(groups[uid])
+      return uid
+    else{
+      log('Failed to find name for:',uid)
+      return undefined
+    }
+  else u = contacts[uid].user
+  return u.first_name + ' ' + u.last_name + (u.username?' ('+u.username+')':'')
 }
 
 // Get message history with given id in the given box
@@ -330,35 +382,67 @@ function getMessages(uid,box){
   var peer = new telegramLink.type.InputPeerContact({ props: { user_id: uid } })
   client.messages.getHistory(peer,0,-1,20,function(res){
     //log(res.toPrintable())
-    var rbox = getMsgBox(getName(peer.user_id))
-    log('Got history for: '+getName(uid))
+    log('Got history for: '+getName(peer.user_id))
     res.messages.list.sort(function(msg1,msg2){
       return msg1.date - msg2.date
     })
     if(res.messages.list.length === 0)
-      return rbox.add('No messages.')
-    rbox.add('Printing...')
-    for(i in res.messages.list){
-      appendMsg(res.messages.list[i],rbox)
-    }
-    /*
+      return appendToUserBox('No messages.',res)
     res.messages.list.forEach(function(msg){
-      if(!msg.message) return;
-      appendMsg(msg,rbox)
+      if(!msg.message) return log('Empty message!',msg)
+      //log('Scheduling message: '+msg.message)
+      appendMsg(msg)
     })
-    */
   })
 }
 
-// Writes given telegram.link "message" object to given boxId
-function appendMsg(msg,toBoxId){
-  var from = msg.from_id
-  var date = moment.unix(msg.date).fromNow()
-  name = getName(from)
-  toBoxId.add(date+' | '+(name || from)+' > '+msg.message)
+function appendToUserBox(msg,context){
+  var goesto
+  if(context.messages.list.length > 0){
+    if(context.messages.list[0].to_id.chat_id){
+      // Group message
+      log('Chose',getName(context.messages.list[0].to_id.chat_id))
+      goesto = getMsgBox(getName(context.messages.list[0].to_id.chat_id))
+    }
+  }
+  if(goesto === undefined){
+    if(context.users.list[0].user_id == user.id){
+      goesto = getMsgBox(getName(context.users.list[1].id))
+    } else{
+      goesto = getMsgBox(getName(context.users.list[0].id))
+    }
+  }
+  appendMsg(msg,goesto,true)
 }
 
-// Try to load key from disk
+// Writes given telegram.link "message" object to given boxId
+function appendMsg(msg,toBoxId,bare){
+  var box
+  if(toBoxId != undefined){
+    box = toBoxId
+  } else {
+    if(msg.from_id === msg.to_id.user_id || msg.from_id != user.id){
+      box = getMsgBox(getName(msg.from_id))
+    } else if(msg.to_id != user.id) {
+      // don't forget dat .user_id! don't need it in from_id...
+      box = getMsgBox(getName(msg.to_id.user_id))
+    } else {
+      // Wtf ? maybe a group
+      log('Unknown message: from',msg.from_id,'to',msg.to_id)
+    }
+  }
+  if(bare)
+    box.add(msg)
+  else {
+    var from = msg.from_id
+    var date = moment.unix(msg.date).fromNow()
+    name = getName(from)
+    box.add(date+' | '+(name || from)+' > '+msg.message)
+  }
+}
+
+// - Entry Point -
+// Load authKey and userdata from disk, then act depending on outcome
 var keyPath = cfgDir+'key'
 log('Checking disk for key...')
 fs.exists(keyPath,function(exists){
@@ -371,8 +455,20 @@ fs.exists(keyPath,function(exists){
         authKey = telegramLink.retrieveAuthKey(content,'password') // yeah sorry just testing
         app.authKey = authKey  
         log('Key loaded')
+        fs.readFile(cfgDir+'user_data.json',function(err,data){
+          if(err)
+            log("FATAL: couldn't read user_data.json")
+          else {
+            try {
+              log("Got User Data from disk: ",data)
+              user = JSON.parse(data)
+              connect()
+            } catch (e) {
+              log("FATAL: user data corrupted:",e)
+            }
+          }
+        })
       }
-      connect()
     })
   } else {
     log('Key not found')
