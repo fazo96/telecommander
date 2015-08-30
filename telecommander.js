@@ -101,8 +101,10 @@ screen.append(msgBox[statusWindow]);
 var contacts = { }
 // Groups hold all the data about groups
 var groups = { }
-// nameToUid is used to match a name to its user/chat id (for the contact/chat list)
-var nameToUid = { }
+// unameToUid is used to match a name to its user id
+var unameToUid = { }
+// same thing for group name -> group object
+var gnameToGid = { }
 
 var state = { } // keeps track of the telegram update state
 var client // used to talk with telegram
@@ -202,11 +204,8 @@ function switchToBox(boxname){
   newb.show()
 }
 
-// Get msgBox for given chat, create if not exists
+// Get msgBox for given group/user NAME, create if not exists
 function getMsgBox(chat,switchto){
-  // Automatically convert ids to names
-  //if(contacts[chat]) chat = contacts[chat].user.id
-  //if(groups[chat]); // To be implemented
   if(chat === undefined){
     log('ERROR: asked for box for "undefined"!!')
     return msgBox[statusWindow]
@@ -215,11 +214,7 @@ function getMsgBox(chat,switchto){
     log('Generating window: "'+chat+'"')
     msgBox[chat] = mkBox()
     screen.append(msgBox[chat])
-    var uid = nameToUid[chat]
-    if(uid != undefined){
-      // Is a real user: download messages and stuff
-      getMessages(uid,msgBox[chat])
-    }
+    getMessages(chat,msgBox[chat])
   } // else log('Getting window','"'+chat+'"')
   if(switchto === true){
     switchToBox(chat)
@@ -230,11 +225,13 @@ function getMsgBox(chat,switchto){
 // What happens when the user submits a command in the prompt
 cmdline.on('submit',function(value){
   msgBox[statusWindow].add('< '+value)
-  if(nameToUid[selectedWindow] == undefined){
+  if(selectedWindow === statusWindow || nameToObj(selectedWindow) === undefined){
+    //log('Window:',selectedWindow,'Eval cmd:',value)
     command(value)
   } else {
     // Send Message
-    sendMsg(nameToUid[selectedWindow],value)
+    //log('sending message')
+    sendMsg(selectedWindow,value)
   }
   cmdline.clearValue()
   cmdline.focus()
@@ -252,22 +249,33 @@ cmdline.key(['escape','C-c'], function(ch,key){
   } else process.exit(0);
 });
 
-function idToPeer(uid){
-  if(contacts[uid])
+function nameToObj(name){
+  var id = gnameToGid[name]
+  if(groups[id] && groups[id].title === name)
+    return groups[id]
+  else {
+    id = unameToUid[name]
+    return contacts[id]
+  }
+}
+
+function idToPeer(uid,type){
+  if(type === 'user')
     return new telegramLink.type.InputPeerContact({ props: { user_id: ''+uid } })
-  else
+  else if(type === 'group')
     return new telegramLink.type.InputPeerChat({ props: { chat_id: ''+uid } }) 
 }
 
 // Send a message
-function sendMsg(uid,str){
+function sendMsg(name,str){
   if(!connected){
     return log('Error: not ready to send messages')
   }
-  var peer = idToPeer(uid)
+  var peer = idToPeer(nameToObj(name).id,nameToObj(name).title?'group':'user')
   var randid = parseInt(Math.random() * 1000000000)
+  log('Sending Message to:',peer.toPrintable())
   client.messages.sendMessage(peer,str,randid,function(sent){
-    log('Send message:','"'+str+'"','to:',selectedWindow+':',sent.toPrintable())
+    log('Sent message:','"'+str+'"','to:',selectedWindow+':',sent.toPrintable())
   })
 }
 
@@ -314,20 +322,11 @@ function downloadData(){
   client.contacts.getContacts('',function(cont){
     chats.clearItems()
     chats.add(statusWindow)
-    cont.users.list.forEach(function(u,index){
-      if(!contacts[u.id]) contacts[u.id] = {}
-      contacts[u.id].user = u
-      var name = getName(u.id)
-      nameToUid[name] = u.id
-      chats.addItem(name)
-      //log('Added user:',u.id,'-',name)
-    })
+    cont.users.list.forEach(addUser)
   })
 
   client.messages.getDialogs(0,0,10,function(dialogs){
-    dialogs.chats.list.forEach(function(item){
-      addGroup(item)
-    })
+    dialogs.chats.list.forEach(addGroup)
   })
 
   client.updates.getState(function(astate){
@@ -340,11 +339,18 @@ function downloadData(){
   })
 }
 
+function addUser(u){
+  contacts[u.id] = { user: u, id: u.id}
+  var name = getName(u.id,'user')
+  unameToUid[name] = u.id
+  chats.addItem(name)
+}
+
 function addGroup(group){
   if(groups[group.id]) return;
   if(group.left === true) return;
   groups[group.id] = { id: group.id, title: group.title }
-  nameToUid[group.title] = group.id
+  gnameToGid[group.title] = group.id
   chats.addItem(group.title)
   log('Added group:',group.title)
 }
@@ -395,30 +401,33 @@ function downloadUpdates(){
   })
 }
 
-function getName(uid){
-  var u
-  if(!contacts[uid])
-    if(groups[uid])
-      return groups[uid].title
-    else{
-      log('Failed to find name for:',uid)
-      return undefined
-    }
-  else u = contacts[uid].user
-  return u.first_name + ' ' + u.last_name + (u.username?' ('+u.username+')':'')
+function getName(id,type){
+  if(type === undefined) throw new Error('no type')
+  if(type === 'group' && groups[id])
+    return groups[id].title
+  else if(type === 'user' && contacts[id]){
+    var u = contacts[id].user
+    return u.first_name + ' ' + u.last_name + (u.username?' (@'+u.username+')':'')
+  } else log('Failed to find name for:',id)
 }
 
-// Get message history with given id in the given box
-function getMessages(uid,box){
+// Get message history with given name in the given box
+function getMessages(name,box){
   if(!connected){
     return log('Uh cant get messages cuz not connected.....')
   }
-  box.add('Downloading message history for '+getName(uid))
-  var peer = idToPeer(uid)
-  if(!peer) return box.add('Could not find peer')
+  //log('Name to obj:',name)
+  var obj = nameToObj(name)
+  if(!obj || !obj.id){
+    return log("Can't get messages",obj,obj.id,obj.title)
+  }
+  var type = obj.title?'group':'user'
+  var peer = idToPeer(obj.id,type)
+  box.add('Downloading message history for '+name)
+  if(!peer) return log('Could not find peer:',name)
   client.messages.getHistory(peer,0,-1,20,function(res){
     //log(res.toPrintable())
-    log('Got history for: '+getName(peer.user_id))
+    log('Got history for: '+getName(peer.user_id||peer.chat_id,peer.chat_id?'group':'user'))
     if(!res.messages){
       return box.add(res.toPrintable())
     }
@@ -429,7 +438,7 @@ function getMessages(uid,box){
       return appendToUserBox('No messages.',res)
     res.messages.list.forEach(function(msg){
       if(!msg.message) return log('Empty message!',msg.toPrintable())
-      //log('Scheduling message: '+msg.message)
+      //log('Scheduling message: '+msg.toPrintable())
       appendMsg(msg)
     })
   })
@@ -440,15 +449,15 @@ function appendToUserBox(msg,context){
   if(context.messages.list.length > 0){
     if(context.messages.list[0].to_id.chat_id){
       // Group message
-      log('Chose',getName(context.messages.list[0].to_id.chat_id))
+      log('Chose',getName(context.messages.list[0].to_id.chat_id,'group'))
       goesto = getMsgBox(getName(context.messages.list[0].to_id.chat_id))
     }
   }
   if(goesto === undefined){
     if(context.users.list[0].user_id == user.id){
-      goesto = getMsgBox(getName(context.users.list[1].id))
+      goesto = getMsgBox(getName(context.users.list[1].id,'user'))
     } else{
-      goesto = getMsgBox(getName(context.users.list[0].id))
+      goesto = getMsgBox(getName(context.users.list[0].id,'user'))
     }
   }
   appendMsg(msg,goesto,true)
@@ -460,14 +469,14 @@ function appendMsg(msg,toBoxId,bare,smartmode){
   if(toBoxId != undefined){
     box = toBoxId
   } else {
-    if(msg.from_id === msg.to_id.user_id || msg.from_id != user.id){
-      param = getName(msg.from_id)
+    if(msg.to_id.chat_id != undefined){
+      // Is a group
+      param = getName(msg.to_id.chat_id,'group')
+    } else if(msg.from_id === msg.to_id.user_id || msg.from_id != user.id){
+      param = getName(msg.from_id,'user')
     } else if(msg.to_id.user_id != undefined && msg.to_id.user_id != user.id) {
       // don't forget dat .user_id! don't need it in from_id...
-      param = getName(msg.to_id.user_id)
-    } else if(msg.to_id.chat_id != undefined){
-      // Is a group
-      param = msg.to_id.chat_id
+      param = getName(msg.to_id.user_id,'user')
     }
     if(smartmode && !bare){
       // Smart mode doesn't append the message to the box if it doesn't exist
@@ -481,7 +490,7 @@ function appendMsg(msg,toBoxId,bare,smartmode){
   else {
     var from = msg.from_id
     var date = moment.unix(msg.date).fromNow()
-    name = getName(from)
+    name = getName(from,'user')
     box.add(date+' | '+(name || from)+' > '+msg.message)
   }
 }
