@@ -143,6 +143,7 @@ function command(cmd){
     }
     user.phone = cmd.split(' ')[1]
     var mindate = moment()
+    log('Checking your phone number with Telegram...')
     client.auth.sendCode(user.phone,5,'en',function(result){
       if(result.err_code){
         return log('Errors:',result.error_code,result.error_message)
@@ -156,13 +157,14 @@ function command(cmd){
         return 'Please use a telegram code not older than '+m.fromNow(true)
       }
       if(!user.registered){
-        log("Your number is not registered. The client will register your account with the Telegram service")
+        log("Your number is not registered. Telecommander will register your account with the Telegram service")
         log(gmd())
         log('Ready for phone code, use command: "code <code> <name> <lastname>" to register')
+        log("If you don't want to sign up, just don't enter the code and press ESC to exit. No data was saved to the file system")
       } else {
-        log("Your number is already registered with telegram. The client will log in.")
+        log("Your number is already assigned to a Telegram account. Telecommander will log you in.")
         log(gmd())
-        log('Ready for phone code, use command: "code <code>" to login')
+        log("If you don't want to sign in, just don't enter the code and press ESC to exit. No data was saved to the file system")
       }
     })
 
@@ -183,19 +185,12 @@ function command(cmd){
       user.first_name = result.user.first_name
       user.last_name = result.user.last_name
       // Done, write user data and key to disk
-      log('Writing key to disk...')
+      log('Writing Log In token and user data to',cfgDir)
       fs.writeFile(cfgDir+'key',authKey,function(err){
-        if(err)
-          log('Could not write key to disk:',err)
-        else
-          log('key saved to disk')
+        if(err) log('FATAL: Could not write key to disk:',err)
       })
-      log('Writing user info to disk...')
       fs.writeFile(cfgDir+'user_data.json',JSON.stringify(user),function(err){
-        if(err)
-          log("ERROR: couldn't write user_data.json:",err)
-        else
-          log('user_data.json saved to disk with data:',JSON.stringify(user))
+        if(err) log("FATAL: couldn't write user_data.json:",err)
       })
       whenReady()
     }
@@ -306,15 +301,13 @@ function sendMsg(name,str){
 function connect(){
   client = telegramLink.createClient(app, telegramLink.PROD_PRIMARY_DC, function(){
     if(!app.authKey){
-      log('Creating authkey...')
+      log('Downloading Authorization Key...')
       client.createAuthKey(function(auth){
         authKey = auth.key.encrypt('password') // I know sorry, but I'm testing. Will add security later, I promise
-        log('Created key')
         // Writes the new encrypted key to disk
-        log('ready for phone number, use command: phone <number>')
+        log('Ready for phone number, use command: phone <number>')
       })
     } else {
-      log('Authkey loaded from disk. Should be ready to go.')
       whenReady()
     }
   })
@@ -341,7 +334,8 @@ function downloadData(){
   })
 
   client.messages.getDialogs(0,0,10,function(dialogs){
-    dialogs.chats.list.forEach(addGroup)
+    if(dialogs && dialogs.chats && dialogs.chats.list)
+      dialogs.chats.list.forEach(addGroup)
   })
 
   client.updates.getState(function(astate){
@@ -416,14 +410,18 @@ function downloadUpdates(){
   })
 }
 
+function nameForUser(u){
+  return u.first_name + ' ' + u.last_name + (u.username?' (@'+u.username+')':'')
+}
+
 function getName(id,type){
-  if(type === undefined) throw new Error('no type')
-  if(type === 'group' && groups[id])
+  if(id === user.id) return nameForUser(user)
+  else if(type === undefined) throw new Error('no type')
+  else if(type === 'group' && groups[id])
     return groups[id].title
-  else if(type === 'user' && contacts[id]){
-    var u = contacts[id].user
-    return u.first_name + ' ' + u.last_name + (u.username?' (@'+u.username+')':'')
-  } else log('Failed to find name for:',id)
+  else if(type === 'user' && contacts[id])
+    return nameForUser(contacts[id].user)
+  else log('Failed to find name for:',id)
 }
 
 // Get message history with given name in the given box
@@ -513,24 +511,24 @@ function appendMsg(msg,toBoxId,bare,smartmode){
 // - Entry Point -
 // Load authKey and userdata from disk, then act depending on outcome
 var keyPath = cfgDir+'key'
-log('Checking disk for key...')
+log('Loading files...')
 fs.exists(keyPath,function(exists){
   if(exists){
-    log('Key found')
+    //log('Authorization Key found')
     fs.readFile(keyPath,function(err,content){
       if(err)
         log('Error while reading key:',err)
       else {
         authKey = telegramLink.retrieveAuthKey(content,'password') // yeah sorry just testing
         app.authKey = authKey
-        log('Key loaded')
+        log('Authorization Key found')
         fs.readFile(cfgDir+'user_data.json',function(err,data){
           if(err)
             log("FATAL: couldn't read user_data.json")
           else {
             try {
-              log("Got User Data from disk: ",data)
               user = JSON.parse(data)
+              log('Welcome',getName(user.id,'user'))
               connect()
             } catch (e) {
               log("FATAL: user data corrupted:",e)
@@ -540,7 +538,6 @@ fs.exists(keyPath,function(exists){
       }
     })
   } else {
-    log('Key not found')
     connect()
   }
 })
