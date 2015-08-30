@@ -1,6 +1,6 @@
 # Telecommander
 
-The experimental full-featured curses-like command line client for Telegram is in heavy development, but also already usable!
+The experimental __full-featured curses-like command line client for Telegram__ is in heavy development, but also __already usable!__
 
 It uses [enricostara](http://github.com/enricostara)'s [telegram.link](http://github.com/enricostara/telegram.link) to connect to Telegram and [chjj](http://github.com/chjj)'s [blessed](http://github.com/chjj/blessed) for the UI.
 
@@ -18,7 +18,7 @@ As of __now__, __Telecommander lets you__:
 - Chat with your friends!
 - Chat in groups!
 
-For version _0.1.0_ (Almost done!):
+For version _0.1.0_ (__Almost done!__):
 
 - Notifications
 - Online Status viewing and management
@@ -40,16 +40,17 @@ What's missing (for future versions up to 1.0)
 - Reply to and Forward message support
 - Do everything (except writing, duh) with the mouse!
 - Cool interface (it's already ok, just not as cool as I want it to be)
+- Search, Tab completion, command history
 - Optimization and automatic datacenter switching
 
 What could be available after 1.0:
 
-- plugin API
+- plugin API, scripting support
 - Telecommander as a library
 - Parsable output mode
 - More cool stuff!
 
-A lot of features depend on [telegram.link](http://telegram.link)'s still missing implementation sadly, but it'll come around eventually.
+A lot of features depend on [telegram.link](http://telegram.link)'s still incomplete implementation sadly, but it'll come around eventually.
 
 ### Hacking
 
