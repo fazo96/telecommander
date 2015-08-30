@@ -1,13 +1,27 @@
 #!/usr/bin/env node
 
-// Prepare deps and fs
-var cfgDir = (process.env.HOME || process.env.USERPROFILE) + '/.config/telecommander/'
+var path = require('path')
+var cfgDir = path.join(process.env.XDG_CONFIG_HOME || (path.join(process.env.HOME || process.env.USERPROFILE, '/.config/')), 'telecommander/')
 process.env.LOGGER_FILE = cfgDir+'log'
 
 var os = require('os')
 var fs = require('fs')
 var moment = require('moment')
 var blessed = require('blessed')
+
+/* IF YOU FORK THE APP PLEASE CHANGE THE ID
+ * AND HASH IN THE APP OBJECT! THEY IDENTIFY
+ * THE APPLICATION CREATOR AND YOU CAN
+ * OBTAIN YOURS FROM http://my.telegram.org
+ */
+var app = {
+  id: '42419',
+  hash: '90a3c2cdbf9b391d9ed72c0639dc0786',
+  version: require('./package.json').version,
+  lang: 'en',
+  deviceModel: os.type(),
+  systemVersion: os.platform()+'/'+os.release()
+}
 
 try { fs.makeDirSync(cfgDir,'0770') } catch (e) { }
 
@@ -87,7 +101,7 @@ screen.append(msgBox[statusWindow]);
 var contacts = { }
 // Groups hold all the data about groups
 var groups = { }
-// nameToUid is used to match a name to its user id (for the contact list)
+// nameToUid is used to match a name to its user/chat id (for the contact/chat list)
 var nameToUid = { }
 
 var state = { } // keeps track of the telegram update state
@@ -206,7 +220,7 @@ function getMsgBox(chat,switchto){
       // Is a real user: download messages and stuff
       getMessages(uid,msgBox[chat])
     }
-  } else log('Getting window','"'+chat+'"')
+  } // else log('Getting window','"'+chat+'"')
   if(switchto === true){
     switchToBox(chat)
   }
@@ -238,12 +252,19 @@ cmdline.key(['escape','C-c'], function(ch,key){
   } else process.exit(0);
 });
 
+function idToPeer(uid){
+  if(contacts[uid])
+    return new telegramLink.type.InputPeerContact({ props: { user_id: ''+uid } })
+  else
+    return new telegramLink.type.InputPeerChat({ props: { chat_id: ''+uid } }) 
+}
+
 // Send a message
 function sendMsg(uid,str){
   if(!connected){
     return log('Error: not ready to send messages')
   }
-  var peer = new telegramLink.type.InputPeerContact({ props: { user_id: ''+uid } })
+  var peer = idToPeer(uid)
   var randid = parseInt(Math.random() * 1000000000)
   client.messages.sendMessage(peer,str,randid,function(sent){
     log('Send message:','"'+str+'"','to:',selectedWindow+':',sent.toPrintable())
@@ -256,16 +277,6 @@ function log(){
   var msg = args.join(' ')
   msgBox[statusWindow].add(msg)
   logger.info(msg)
-}
-
-// Prepare data to feed to telegramLink
-var app = {
-  id: '42419',
-  hash: '90a3c2cdbf9b391d9ed72c0639dc0786',
-  version: require('./package.json').version,
-  lang: 'en',
-  deviceModel: os.type(),
-  systemVersion: os.platform()+'/'+os.release()
 }
 
 // Connects to telegram
@@ -314,11 +325,8 @@ function downloadData(){
   })
 
   client.messages.getDialogs(0,0,10,function(dialogs){
-    dialogs.dialogs.list.forEach(function(item){
-      if(item.peer.chat_id){ // is a group
-        groups[item.peer.chat_id] = item
-        //log('Added group:',item.peer.chat_id)
-      }
+    dialogs.chats.list.forEach(function(item){
+      addGroup(item)
     })
   })
 
@@ -330,6 +338,15 @@ function downloadData(){
     //client.registerOnUpdates(onUpdate)
     setTimeout(downloadUpdates,1000)
   })
+}
+
+function addGroup(group){
+  if(groups[group.id]) return;
+  if(group.left === true) return;
+  groups[group.id] = { id: group.id, title: group.title }
+  nameToUid[group.title] = group.id
+  chats.addItem(group.title)
+  log('Added group:',group.title)
 }
 
 // Updates the current state
@@ -354,16 +371,25 @@ function onUpdate(upd){
 
 function downloadUpdates(){
   client.updates.getDifference(state.pts,state.date,state.qts,function(res){
-    log('Got Diff: ',res.toPrintable())
-    if(res.state){
-      updateState(res.state)
-    }
-    if(res.new_messages){
-      res.new_messages.list.forEach(function(msg){
-        if(!msg.message) return log('Empty message!',msg)
-        //log('Scheduling message: '+msg.message)
-        appendMsg(msg,undefined,false,true)
-      })
+    if(!res.instanceOf('api.type.updates.DifferenceEmpty')){
+      //log('Got Diff: ',res.toPrintable())
+      if(res.state){
+        updateState(res.state)
+      }
+      if(res.new_messages){
+        res.new_messages.list.forEach(function(msg){
+          if(!msg.message) return log('Empty message!',msg)
+          //log('Scheduling message: '+msg.message)
+          appendMsg(msg,undefined,false,true)
+        })
+      }
+      if(res.chats){
+        res.chats.list.forEach(function(c){
+          if(!groups[c.id]){
+            groups[c.id] = { id: c.id, title: c.title }
+          }
+        })
+      }
     }
     setTimeout(downloadUpdates,1000)
   })
@@ -373,7 +399,7 @@ function getName(uid){
   var u
   if(!contacts[uid])
     if(groups[uid])
-      return uid
+      return groups[uid].title
     else{
       log('Failed to find name for:',uid)
       return undefined
@@ -388,17 +414,21 @@ function getMessages(uid,box){
     return log('Uh cant get messages cuz not connected.....')
   }
   box.add('Downloading message history for '+getName(uid))
-  var peer = new telegramLink.type.InputPeerContact({ props: { user_id: uid } })
+  var peer = idToPeer(uid)
+  if(!peer) return box.add('Could not find peer')
   client.messages.getHistory(peer,0,-1,20,function(res){
     //log(res.toPrintable())
     log('Got history for: '+getName(peer.user_id))
+    if(!res.messages){
+      return box.add(res.toPrintable())
+    }
     res.messages.list.sort(function(msg1,msg2){
       return msg1.date - msg2.date
     })
     if(res.messages.list.length === 0)
       return appendToUserBox('No messages.',res)
     res.messages.list.forEach(function(msg){
-      if(!msg.message) return log('Empty message!',msg)
+      if(!msg.message) return log('Empty message!',msg.toPrintable())
       //log('Scheduling message: '+msg.message)
       appendMsg(msg)
     })
@@ -432,12 +462,12 @@ function appendMsg(msg,toBoxId,bare,smartmode){
   } else {
     if(msg.from_id === msg.to_id.user_id || msg.from_id != user.id){
       param = getName(msg.from_id)
-    } else if(msg.to_id != user.id) {
+    } else if(msg.to_id.user_id != undefined && msg.to_id.user_id != user.id) {
       // don't forget dat .user_id! don't need it in from_id...
       param = getName(msg.to_id.user_id)
-    } else {
-      // Wtf ? maybe a group
-      return log('Unknown message: from',msg.from_id,'to',msg.to_id)
+    } else if(msg.to_id.chat_id != undefined){
+      // Is a group
+      param = msg.to_id.chat_id
     }
     if(smartmode && !bare){
       // Smart mode doesn't append the message to the box if it doesn't exist
