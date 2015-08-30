@@ -36,7 +36,7 @@ var defaultStyle = {
 
 // Function to create a log box
 function mkBox(){
-  return blessed.log({
+  var box = blessed.log({
     right: 0,
     width: '80%',
     height: screen.height-3,
@@ -45,6 +45,8 @@ function mkBox(){
     draggable: true,
     style: defaultStyle
   })
+  box.hide()
+  return box
 }
 
 // Contact list window
@@ -119,11 +121,11 @@ function command(cmd){
       }
       if(!user.registered){
         log("Your number is not registered. The client will register your account with the Telegram service")
-        log(gmd()) 
+        log(gmd())
         log('Ready for phone code, use command: "code <code> <name> <lastname>" to register')
       } else {
         log("Your number is already registered with telegram. The client will log in.")
-        log(gmd()) 
+        log(gmd())
         log('Ready for phone code, use command: "code <code>" to login')
       }
     })
@@ -170,19 +172,24 @@ function command(cmd){
   }
 }
 chats.addItem(msgBox[statusWindow])
+switchToBox(statusWindow)
 screen.render();
 
 // What happens when a different window is selected
 chats.on('select',function(selected){
   log('SELECT:',selected.content)
-  msgBox[selectedWindow].hide()
-  selectedWindow = selected.content;
-  var newb = getMsgBox(selectedWindow)
-  newb.show() 
+  switchToBox(selected.content)
 })
 
+function switchToBox(boxname){
+  msgBox[selectedWindow].hide()
+  selectedWindow = boxname;
+  var newb = getMsgBox(selectedWindow)
+  newb.show()
+}
+
 // Get msgBox for given chat, create if not exists
-function getMsgBox(chat){
+function getMsgBox(chat,switchto){
   // Automatically convert ids to names
   //if(contacts[chat]) chat = contacts[chat].user.id
   //if(groups[chat]); // To be implemented
@@ -197,9 +204,12 @@ function getMsgBox(chat){
     var uid = nameToUid[chat]
     if(uid != undefined){
       // Is a real user: download messages and stuff
-      getMessages(uid,msgBox[chat]) 
+      getMessages(uid,msgBox[chat])
     }
   } else log('Getting window','"'+chat+'"')
+  if(switchto === true){
+    switchToBox(chat)
+  }
   return msgBox[chat]
 }
 
@@ -218,7 +228,7 @@ cmdline.on('submit',function(value){
 
 cmdline.focus() // make sure prompt is focused
 
-// Catch ctrl-c or escape event and close program  
+// Catch ctrl-c or escape event and close program
 cmdline.key(['escape','C-c'], function(ch,key){
   if(connected || client != undefined){
     log('Closing communications and shutting down...')
@@ -266,7 +276,7 @@ function connect(){
       client.createAuthKey(function(auth){
         authKey = auth.key.encrypt('password') // I know sorry, but I'm testing. Will add security later, I promise
         log('Created key')
-        // Writes the new encrypted key to disk 
+        // Writes the new encrypted key to disk
         log('ready for phone number, use command: phone <number>')
       })
     } else {
@@ -290,7 +300,6 @@ function whenReady(){
 // Downloads stuff
 function downloadData(){
   log('Downloading data...')
-  
   client.contacts.getContacts('',function(cont){
     chats.clearItems()
     chats.add(statusWindow)
@@ -308,7 +317,7 @@ function downloadData(){
     dialogs.dialogs.list.forEach(function(item){
       if(item.peer.chat_id){ // is a group
         groups[item.peer.chat_id] = item
-        //log('Added group:',item.peer.chat_id) 
+        //log('Added group:',item.peer.chat_id)
       }
     })
   })
@@ -353,7 +362,7 @@ function downloadUpdates(){
       res.new_messages.list.forEach(function(msg){
         if(!msg.message) return log('Empty message!',msg)
         //log('Scheduling message: '+msg.message)
-        appendMsg(msg)
+        appendMsg(msg,undefined,false,true)
       })
     }
     setTimeout(downloadUpdates,1000)
@@ -416,20 +425,26 @@ function appendToUserBox(msg,context){
 }
 
 // Writes given telegram.link "message" object to given boxId
-function appendMsg(msg,toBoxId,bare){
-  var box
+function appendMsg(msg,toBoxId,bare,smartmode){
+  var box,param
   if(toBoxId != undefined){
     box = toBoxId
   } else {
     if(msg.from_id === msg.to_id.user_id || msg.from_id != user.id){
-      box = getMsgBox(getName(msg.from_id))
+      param = getName(msg.from_id)
     } else if(msg.to_id != user.id) {
       // don't forget dat .user_id! don't need it in from_id...
-      box = getMsgBox(getName(msg.to_id.user_id))
+      param = getName(msg.to_id.user_id)
     } else {
       // Wtf ? maybe a group
-      log('Unknown message: from',msg.from_id,'to',msg.to_id)
+      return log('Unknown message: from',msg.from_id,'to',msg.to_id)
     }
+    if(smartmode && !bare){
+      // Smart mode doesn't append the message to the box if it doesn't exist
+      // because when created, the box will download message history
+      if(msgBox[param] === undefined) return;
+    }
+    box = getMsgBox(param)
   }
   if(bare)
     box.add(msg)
@@ -453,7 +468,7 @@ fs.exists(keyPath,function(exists){
         log('Error while reading key:',err)
       else {
         authKey = telegramLink.retrieveAuthKey(content,'password') // yeah sorry just testing
-        app.authKey = authKey  
+        app.authKey = authKey
         log('Key loaded')
         fs.readFile(cfgDir+'user_data.json',function(err,data){
           if(err)
