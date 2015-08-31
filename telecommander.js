@@ -1,20 +1,25 @@
 #!/usr/bin/env node
 
-var path = require('path')
-var cfgDir = path.join(process.env.XDG_CONFIG_HOME || (path.join(process.env.HOME || process.env.USERPROFILE, '/.config/')), 'telecommander/')
-process.env.LOGGER_FILE = cfgDir+'log'
-
 var os = require('os')
 var fs = require('fs')
 var moment = require('moment')
 var blessed = require('blessed')
+
+var data = {} // Hold all global data
+require('./lib/util.js')(data) // Load utils
+require('./lib/ui.js')(data) // Load ui
+
+var path = require('path')
+
+data.cfgDir = path.join(process.env.XDG_CONFIG_HOME || (path.join(process.env.HOME || process.env.USERPROFILE, '/.config/')), 'telecommander/')
+process.env.LOGGER_FILE = data.cfgDir+'log'
 
 /* IF YOU FORK THE APP PLEASE CHANGE THE ID
  * AND HASH IN THE APP OBJECT! THEY IDENTIFY
  * THE APPLICATION CREATOR AND YOU CAN
  * OBTAIN YOURS FROM http://my.telegram.org
  */
-var app = {
+data.app = {
   id: '42419',
   hash: '90a3c2cdbf9b391d9ed72c0639dc0786',
   version: require('./package.json').version,
@@ -25,124 +30,24 @@ var app = {
 
 try { fs.makeDirSync(cfgDir,'0770') } catch (e) { }
 
+// Logger
 var getLogger = require('get-log')
 getLogger.PROJECT_NAME = 'telecommander'
-var logger = getLogger('main')
+data.logger = getLogger('main')
 
-var telegramLink = require('telegram.link')()
-
-// Prepare blessed UI
-
-var screen = blessed.screen({
-  smartCSR: true,
-  dockBorders: true
-})
-screen.title = "Telecommander"
-
-var defaultStyle = {
-  fg: 'white',
-  border: { fg: 'grey' },
-  scrollbar: {
-    ch: '*'
-  }
-}
-
-// Contact list window
-var chats = blessed.list({
-  keys: true,
-  label: 'Conversations',
-  left: 0,
-  top:0,
-  height: screen.height-3,
-  width: '20%',
-  border: { type: 'line' },
-  mouse: true,
-  invertSelected: true,
-  style: defaultStyle,
-})
-chats.style.selected = { bold: true }
-chats.focus()
-
-// Function to create a log box
-function mkBox(label){
-  var box = blessed.log({
-    keys: true,
-    right: 0,
-    label: label,
-    width: '80%',
-    height: screen.height - cmdline.height,
-    border: { type: 'line' },
-    scrollable: true,
-    //draggable: true,
-    style: defaultStyle
-  })
-  box.hide()
-  return box
-}
-
-// Command line prompt
-var cmdline = blessed.textbox({
-  keys: true,
-  label: 'Command for Telecommander',
-  inputOnFocus: true,
-  bottom: 0,
-  left: 'center',
-  width: '100%',
-  height: 3,
-  border: { type: 'line' },
-  style: defaultStyle
-})
-
-var statusWindow = "Status"
-
-// mgsBox holds the chat boxes for every list entry
-var msgBox = { }
-msgBox[statusWindow] = mkBox(statusWindow)
-
-// Add stuff to the screen
-screen.append(chats);
-screen.append(cmdline);
-screen.append(msgBox[statusWindow]);
-chats.addItem(msgBox[statusWindow])
-switchToBox(statusWindow)
-screen.on('resize',function(){
-  for(i in msgBox){
-    item = msgBox[i]
-    item.height = screen.height - cmdline.height
-  }
-  chats.height = screen.height - cmdline.height
-  screen.render()
-})
-screen.key('tab',function(){
-  screen.focusPush(chats)
-})
-screen.render()
-
-// Contacts holds all the contacts data
-var contacts = { }
-// Groups hold all the data about groups
-var groups = { }
-// unameToUid is used to match a name to its user id
-var unameToUid = { }
-// same thing for group name -> group object
-var gnameToGid = { }
-
-var state = { } // keeps track of the telegram update state
-var client // used to talk with telegram
-var user = { } // holds data about current user
-var authKey // our authorization key to access telegram
-var connected = false // keep track of wether we are good to go and logged in
-var selectedWindow = statusWindow // the currently selected window
+data.telegramLink = require('telegram.link')()
+data.authKey // our authorization key to access telegram
+data.connected = false // keep track of wether we are good to go and logged in
 
 // Write something in the Status box
-function log(){
+data.log = function(){
   args = Array.prototype.slice.call(arguments)
   var msg = args.join(' ')
-  msgBox[statusWindow].add(msg)
-  logger.info(msg)
+  data.getMsgBox(data.statusWindow).add(msg)
+  data.logger.info(msg)
 }
 
-function command(cmd){
+data.command = function(cmd){
   cmdl = cmd.split(' ')
   cmdname = cmdl[0]
 
@@ -211,241 +116,107 @@ function command(cmd){
   }
 }
 
-// What happens when a different window is selected
-chats.on('select',function(selected){
-  log('SELECT:',selected.content)
-  switchToBox(selected.content)
-  screen.focusPush(cmdline)
-  screen.render()
-})
-
-function switchToBox(boxname){
-  if(selectedWindow && msgBox[selectedWindow])
-    msgBox[selectedWindow].hide()
-  selectedWindow = boxname;
-  if(selectedWindow != statusWindow)
-    cmdline.setLabel('to '+selectedWindow)
-  else
-    cmdline.setLabel('Command for Telecommander')
-  var newb = getMsgBox(selectedWindow)
-  newb.show()
-}
-
-// Get msgBox for given group/user NAME, create if not exists
-function getMsgBox(chat,switchto){
-  if(chat === undefined){
-    log('ERROR: asked for box for "undefined"!!')
-    return msgBox[statusWindow]
-  }
-  if(!msgBox[chat]){
-    //log('Generating window: "'+chat+'"')
-    msgBox[chat] = mkBox(chat)
-    screen.append(msgBox[chat])
-    getMessages(chat,msgBox[chat])
-  } // else log('Getting window','"'+chat+'"')
-  if(switchto === true){
-    switchToBox(chat)
-  }
-  return msgBox[chat]
-}
-
-// What happens when the user submits a command in the prompt
-cmdline.on('submit',function(value){
-  msgBox[statusWindow].add('< '+value)
-  if(selectedWindow === statusWindow || nameToObj(selectedWindow) === undefined){
-    //log('Window:',selectedWindow,'Eval cmd:',value)
-    command(value)
-  } else if(value.indexOf('//') === 0){
-    sendMsg(selectedWindow,value.substring(1))
-  } else if(value.indexOf('/') === 0){
-    command(value.substring(1))
-  } else {
-    sendMsg(selectedWindow,value)
-  }
-  cmdline.clearValue()
-  cmdline.focus()
-})
-
-//cmdline.focus() // make sure prompt is focused
-
-function quit(){
-  if(connected || client != undefined){
-    log('Closing communications and shutting down...')
-    client.end(function(){
-      process.exit(0)
-    })
-  } else process.exit(0);
-}
-
-// Catch ctrl-c or escape event and close program
-screen.key(['escape','C-c'], function(ch,key){
-  quit()
-});
-
-function nameToObj(name){
-  var id = gnameToGid[name]
-  if(groups[id] && groups[id].title === name)
-    return groups[id]
-  else {
-    id = unameToUid[name]
-    return contacts[id]
-  }
-}
-
-function idToPeer(uid,type){
-  if(type === 'user')
-    return new telegramLink.type.InputPeerContact({ props: { user_id: ''+uid } })
-  else if(type === 'group')
-    return new telegramLink.type.InputPeerChat({ props: { chat_id: ''+uid } }) 
-}
-
 // Send a message
-function sendMsg(name,str){
-  if(!connected){
+data.sendMsg = function(name,str){
+  if(!data.connected){
     return log('Error: not ready to send messages')
   }
-  var peer = idToPeer(nameToObj(name).id,nameToObj(name).title?'group':'user')
+  var obj = data.nameToObj(name)
+  var peer = data.idToPeer(obj.id,obj.title?'group':'user')
   var randid = parseInt(Math.random() * 1000000000)
   //log('Sending Message to:',peer.toPrintable())
-  client.messages.sendMessage(peer,str,randid,function(sent){
+  data.client.messages.sendMessage(peer,str,randid,function(sent){
     //log('Sent message:','"'+str+'"','to:',selectedWindow+':',sent.toPrintable())
   })
 }
 
 // Connects to telegram
-function connect(){
-  client = telegramLink.createClient(app, telegramLink.PROD_PRIMARY_DC, function(){
-    if(!app.authKey){
+data.connect = function(){
+  data.client = data.telegramLink.createClient(data.app, data.telegramLink.PROD_PRIMARY_DC, function(){
+    if(!data.app.authKey){
       log('Downloading Authorization Key...')
-      client.createAuthKey(function(auth){
-        authKey = auth.key.encrypt('password') // I know sorry, but I'm testing. Will add security later, I promise
+      data.client.createAuthKey(function(auth){
+        data.app.authKey = auth.key.encrypt('password') // Will add security later, I promise
         // Writes the new encrypted key to disk
-        log('Ready for phone number, use command: phone <number>')
+        data.log('Ready for phone number, use command: phone <number>')
       })
     } else {
-      whenReady()
+      data.whenReady()
     }
   })
 
-  client.once('dataCenter',function(dcs){
-    log('Datacenters:',dcs.toPrintable())
+  data.client.once('dataCenter',function(dcs){
+    data.log('Datacenters:',dcs.toPrintable())
   })
 }
 
 // Executed when connected and logged in
-function whenReady(){
-  log('READY!')
-  connected = true
-  downloadData()
+data.whenReady = function(){
+  data.log('READY!')
+  data.connected = true
+  data.downloadData()
 }
 
 // Downloads stuff
-function downloadData(){
-  log('Downloading data...')
-  client.contacts.getContacts('',function(cont){
-    chats.clearItems()
-    chats.add(statusWindow)
-    cont.users.list.forEach(addUser)
+data.downloadData = function(){
+  data.log('Downloading data...')
+  data.client.contacts.getContacts('',function(cont){
+    data.chats.clearItems()
+    data.chats.add(data.statusWindow)
+    cont.users.list.forEach(data.addUser)
   })
 
-  client.messages.getDialogs(0,0,10,function(dialogs){
+  data.client.messages.getDialogs(0,0,10,function(dialogs){
     if(dialogs && dialogs.chats && dialogs.chats.list)
-      dialogs.chats.list.forEach(addGroup)
+      dialogs.chats.list.forEach(data.addGroup)
   })
 
-  client.updates.getState(function(astate){
-    updateState(astate)
-    log(state.unreadCount,'unread messages')
-    log('Started receiving updates')
+  data.client.updates.getState(function(astate){
+    data.updateState(astate)
+    data.log(data.state.unreadCount,'unread messages')
+    data.log('Started receiving updates')
     // Can't use registerOnUpdates because it's apparently broken
     //client.registerOnUpdates(onUpdate)
-    setTimeout(downloadUpdates,1000)
+    setTimeout(data.downloadUpdates,1000)
   })
 }
 
-function addUser(u){
-  if(!user || !user.id) return log("Can't add invalid user object to contacts",u)
-  contacts[u.id] = { user: u, id: u.id}
-  var name = getName(u.id,'user')
-  unameToUid[name] = u.id
-  if(!chats.getItem(name)) chats.addItem(name)
-}
-
-function addGroup(group){
-  if(groups[group.id]) return;
-  if(group.left === true) return;
-  if(group.title === undefined){
-    return log('Undefined group title in group ',group)
-  }
-  groups[group.id] = { id: group.id, title: group.title }
-  gnameToGid[group.title] = group.id
-  if(!chats.getItem(group.title)) chats.addItem(group.title)
-}
-
-// Updates the current state
-function updateState(newstate){
-  state.pts = newstate.pts
-  state.qts = newstate.qts
-  state.date = newstate.date
-  state.sqp = newstate.seq
-  state.unreadCount = newstate.unread_count
-}
-
-// process an update
-function onUpdate(upd){
-  log('Got Update:',upd.toPrintable())
-}
-
-function downloadUpdates(){
-  client.updates.getDifference(state.pts,state.date,state.qts,function(res){
+data.downloadUpdates = function(){
+  data.client.updates.getDifference(data.state.pts,data.state.date,data.state.qts,function(res){
     if(!res.instanceOf('api.type.updates.DifferenceEmpty')){
       //log('Got Diff: ',res.toPrintable())
       if(res.state){
-        updateState(res.state)
+        data.updateState(res.state)
       }
       if(res.chats)
-        for(c in res.chats.list) addGroup(c)
+        for(c in res.chats.list) data.addGroup(c)
       if(res.users)
-        for(c in res.users.list) addUser(c)
+        for(c in res.users.list) data.addUser(c)
       if(res.new_messages){
         res.new_messages.list.forEach(function(msg){
-          appendMsg(msg,undefined,false,true)
+          data.appendMsg(msg,undefined,false,true)
         })
       }
     }
-    setTimeout(downloadUpdates,1000)
+    setTimeout(data.downloadUpdates,1000)
   })
 }
 
-function nameForUser(u){
-  return u.first_name + ' ' + u.last_name + (u.username?' (@'+u.username+')':'')
-}
-
-function getName(id,type){
-  if(id === user.id) return nameForUser(user)
-  else if(type === undefined) throw new Error('no type')
-  else if(type === 'group' && groups[id])
-    return groups[id].title
-  else if(type === 'user' && contacts[id])
-    return nameForUser(contacts[id].user)
-  else log('Failed to find name for',type,id)
-}
-
 // Get message history with given name in the given box
-function getMessages(name,box){
-  if(!connected){
+data.getMessages = function(name,box){
+  if(!data.connected){
     return log('Uh cant get messages cuz not connected.....')
   }
   //log('Name to obj:',name)
-  var obj = nameToObj(name)
+  var obj = data.nameToObj(name)
   if(!obj || !obj.id){
-    return log("Can't get messages",obj,obj.id,obj.title)
+    return data.log("Can't get messages",obj,obj.id,obj.title)
   }
   var type = obj.title?'group':'user'
-  var peer = idToPeer(obj.id,type)
+  var peer = data.idToPeer(obj.id,type)
   box.add('Downloading message history for '+name)
   if(!peer) return log('Could not find peer:',name)
-  client.messages.getHistory(peer,0,-1,20,function(res){
+  data.client.messages.getHistory(peer,0,-1,20,function(res){
     //log(res.toPrintable())
     //log('Got history for: '+getName(peer.user_id||peer.chat_id,peer.chat_id?'group':'user'))
     if(!res.messages){
@@ -455,62 +226,62 @@ function getMessages(name,box){
       return msg1.date - msg2.date
     })
     if(res.messages.list.length === 0)
-      return appendToUserBox('No messages.',res)
+      return data.appendToUserBox('No messages.',res)
     res.messages.list.forEach(function(msg){
       //if(!msg.message) return log('Empty message!',msg.toPrintable())
       //log('Scheduling message: '+msg.toPrintable())
-      appendMsg(msg)
+      data.appendMsg(msg)
     })
   })
 }
 
-function appendToUserBox(msg,context){
+data.appendToUserBox = function(msg,context){
   var goesto
   if(context.messages.list.length > 0){
     if(context.messages.list[0].to_id.chat_id){
       // Group message
-      log('Chose',getName(context.messages.list[0].to_id.chat_id,'group'))
-      goesto = getMsgBox(getName(context.messages.list[0].to_id.chat_id))
+      data.log('Chose',data.getName(context.messages.list[0].to_id.chat_id,'group'))
+      goesto = data.getMsgBox(data.getName(context.messages.list[0].to_id.chat_id))
     }
   }
   if(goesto === undefined){
     if(context.users.list[0].user_id == user.id){
-      goesto = getMsgBox(getName(context.users.list[1].id,'user'))
+      goesto = data.getMsgBox(getName(context.users.list[1].id,'user'))
     } else{
-      goesto = getMsgBox(getName(context.users.list[0].id,'user'))
+      goesto = data.getMsgBox(getName(context.users.list[0].id,'user'))
     }
   }
-  appendMsg(msg,goesto,true)
+  data.appendMsg(msg,goesto,true)
 }
 
 // Writes given telegram.link "message" object to given boxId
-function appendMsg(msg,toBoxId,bare,smartmode){
+data.appendMsg = function(msg,toBoxId,bare,smartmode){
   var box,param
   if(toBoxId != undefined){
     box = toBoxId
   } else {
     if(msg.to_id.chat_id != undefined){
       // Is a group
-      param = getName(msg.to_id.chat_id,'group')
+      param = data.getName(msg.to_id.chat_id,'group')
     } else if(msg.from_id === msg.to_id.user_id || msg.from_id != user.id){
-      param = getName(msg.from_id,'user')
+      param = data.getName(msg.from_id,'user')
     } else if(msg.to_id.user_id != undefined && msg.to_id.user_id != user.id) {
       // don't forget dat .user_id! don't need it in from_id...
-      param = getName(msg.to_id.user_id,'user')
+      param = data.getName(msg.to_id.user_id,'user')
     }
     if(smartmode && !bare){
       // Smart mode doesn't append the message to the box if it doesn't exist
       // because when created, the box will download message history
-      if(msgBox[param] === undefined) return;
+      if(data.msgBox[param] === undefined) return;
     }
-    box = getMsgBox(param)
+    box = data.getMsgBox(param)
   }
   if(bare)
     box.add(msg)
   else {
     var from = msg.from_id
     var date = moment.unix(msg.date).fromNow()
-    name = getName(from,'user')
+    name = data.getName(from,'user')
     var txt
     if(msg.media){
       if(msg.media.photo)
@@ -527,34 +298,34 @@ function appendMsg(msg,toBoxId,bare,smartmode){
 
 // - Entry Point -
 // Load authKey and userdata from disk, then act depending on outcome
-var keyPath = cfgDir+'key'
-log('Loading files...')
+data.screen.render()
+var keyPath = data.cfgDir+'key'
+data.log('Loading files...')
 fs.exists(keyPath,function(exists){
   if(exists){
     //log('Authorization Key found')
     fs.readFile(keyPath,function(err,content){
       if(err)
-        log('Error while reading key:',err)
+        data.log('Error while reading key:',err)
       else {
-        authKey = telegramLink.retrieveAuthKey(content,'password') // yeah sorry just testing
-        app.authKey = authKey
-        log('Authorization Key found')
-        fs.readFile(cfgDir+'user_data.json',function(err,data){
+        data.app.authKey = data.telegramLink.retrieveAuthKey(content,'password') // yeah sorry just testing
+        data.log('Authorization Key found')
+        fs.readFile(data.cfgDir+'user_data.json',function(err,res){
           if(err)
-            log("FATAL: couldn't read user_data.json")
+            data.log("FATAL: couldn't read user_data.json")
           else {
             try {
-              user = JSON.parse(data)
-              log('Welcome',getName(user.id,'user'))
-              connect()
+              data.user = JSON.parse(res)
+              data.log('Welcome',data.getName(data.user.id,'user'))
             } catch (e) {
-              log("FATAL: user data corrupted:",e)
+              data.log("FATAL: user data corrupted:",e)
             }
+            data.connect()
           }
         })
       }
     })
   } else {
-    connect()
+    data.connect()
   }
 })
