@@ -60,8 +60,7 @@ var chats = blessed.list({
   invertSelected: true,
   style: defaultStyle,
 })
-chats.style.item = { fg: 'grey' }
-chats.style.selected = { fg: 'white' }
+chats.style.selected = { bold: true }
 chats.focus()
 
 // Function to create a log box
@@ -365,6 +364,7 @@ function downloadData(){
 }
 
 function addUser(u){
+  if(!user || !user.id) return log("Can't add invalid user object to contacts",u)
   contacts[u.id] = { user: u, id: u.id}
   var name = getName(u.id,'user')
   unameToUid[name] = u.id
@@ -374,6 +374,9 @@ function addUser(u){
 function addGroup(group){
   if(groups[group.id]) return;
   if(group.left === true) return;
+  if(group.title === undefined){
+    return log('Undefined group title in group ',group)
+  }
   groups[group.id] = { id: group.id, title: group.title }
   gnameToGid[group.title] = group.id
   if(!chats.getItem(group.title)) chats.addItem(group.title)
@@ -400,13 +403,15 @@ function downloadUpdates(){
       if(res.state){
         updateState(res.state)
       }
+      if(res.chats)
+        for(c in res.chats.list) addGroup(c)
+      if(res.users)
+        for(c in res.users.list) addUser(c)
       if(res.new_messages){
         res.new_messages.list.forEach(function(msg){
           appendMsg(msg,undefined,false,true)
         })
       }
-      if(res.chats) res.chats.list.forEach(addGroup)
-      if(res.users) res.users.list.forEach(addUser)
     }
     setTimeout(downloadUpdates,1000)
   })
