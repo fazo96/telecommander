@@ -200,9 +200,9 @@ data.downloadUpdates = function(){
         data.updateState(res.state)
       }
       if(res.chats)
-        for(c in res.chats.list) data.addGroup(c)
+        for(c in res.chats.list) data.addGroup(res.chats.list[c])
       if(res.users)
-        for(c in res.users.list) data.addUser(c)
+        for(c in res.users.list) data.addUser(res.users.list[c])
       if(res.new_messages){
         res.new_messages.list.forEach(function(msg){
           data.appendMsg(msg,undefined,false,true)
@@ -251,7 +251,7 @@ data.appendToUserBox = function(msg,context){
   if(context.messages.list.length > 0){
     if(context.messages.list[0].to_id.chat_id){
       // Group message
-      data.log('Chose',data.getName(context.messages.list[0].to_id.chat_id,'group'))
+      //data.log('Chose',data.getName(context.messages.list[0].to_id.chat_id,'group'))
       goesto = data.getMsgBox(data.getName(context.messages.list[0].to_id.chat_id))
     }
   }
