@@ -172,8 +172,8 @@ data.whenReady = function(){
 data.downloadData = function(){
   data.log('Downloading data...')
   data.client.contacts.getContacts('',function(cont){
-    data.chats.clearItems()
-    data.chats.add(data.statusWindow)
+    //data.chats.clearItems()
+    //data.chats.add(data.statusWindow)
     cont.users.list.forEach(data.addUser)
   })
 
@@ -195,7 +195,7 @@ data.downloadData = function(){
 data.downloadUpdates = function(){
   data.client.updates.getDifference(data.state.pts,data.state.date,data.state.qts,function(res){
     if(!res.instanceOf('api.type.updates.DifferenceEmpty')){
-      //log('Got Diff: ',res.toPrintable())
+      //data.log('Got Diff: ',res.toPrintable())
       if(res.state){
         data.updateState(res.state)
       }
@@ -205,19 +205,22 @@ data.downloadUpdates = function(){
         for(c in res.users.list) data.addUser(res.users.list[c])
       if(res.new_messages){
         res.new_messages.list.forEach(function(msg){
-          data.appendMsg(msg,undefined,false,true)
+          data.appendMsg(msg,undefined,false,false)
         })
       }
+      data.rebuildChatList()
     }
     setTimeout(data.downloadUpdates,1000)
   })
 }
 
 // Get message history with given name in the given box
+// BROKEN, need to be rethinked
 data.getMessages = function(name,box){
   if(!data.connected){
-    return log('Uh cant get messages cuz not connected.....')
+    return // data.log('Uh cant get messages cuz not connected.....')
   }
+  if(data.downloadingMessages == true) return
   //log('Name to obj:',name)
   var obj = data.nameToObj(name)
   if(!obj || !obj.id){
@@ -225,9 +228,11 @@ data.getMessages = function(name,box){
   }
   var type = obj.title?'group':'user'
   var peer = data.idToPeer(obj.id,type)
-  box.add('Downloading message history for '+name)
+  //box.add('Downloading message history for '+name)
   if(!peer) return log('Could not find peer:',name)
-  data.client.messages.getHistory(peer,0,-1,100,function(res){
+  data.downloadingMessages = true
+  var oldnlines = box.getLines().length
+  data.client.messages.getHistory(peer,0,obj.oldest_message||0,10,function(res){
     //log(res.toPrintable())
     //log('Got history for: '+getName(peer.user_id||peer.chat_id,peer.chat_id?'group':'user'))
     if(!res.messages){
@@ -236,13 +241,13 @@ data.getMessages = function(name,box){
     res.messages.list.sort(function(msg1,msg2){
       return msg1.date - msg2.date
     })
-    if(res.messages.list.length === 0)
-      return data.appendToUserBox('No messages.',res)
+    res.messages.list.reverse()
     res.messages.list.forEach(function(msg){
-      //if(!msg.message) return log('Empty message!',msg.toPrintable())
-      //log('Scheduling message: '+msg.toPrintable())
-      data.appendMsg(msg)
+      data.appendMsg(msg,undefined,false,true)
     })
+    if(oldnlines == 0) box.setScrollPerc(100)
+    //box.add(obj.oldest_message)
+    data.downloadingMessages = false
   })
 }
 
@@ -266,45 +271,53 @@ data.appendToUserBox = function(msg,context){
 }
 
 // Writes given telegram.link "message" object to given boxId
-data.appendMsg = function(msg,toBoxId,bare,smartmode){
-  var box,param
+data.appendMsg = function(msg,toBoxId,bare,prepend){
+  var box,param,obj
   if(toBoxId != undefined){
     box = toBoxId
   } else {
     if(msg.to_id.chat_id != undefined){
       // Is a group
       param = data.getName(msg.to_id.chat_id,'group')
+      obj = data.groups[msg.to_id.chat_id]
     } else if(msg.from_id === msg.to_id.user_id || msg.from_id != data.user.id){
       param = data.getName(msg.from_id,'user')
+      obj = data.contacts[msg.from_id]
     } else if(msg.to_id.user_id != undefined && msg.to_id.user_id != data.user.id) {
       // don't forget dat .user_id! don't need it in from_id...
       param = data.getName(msg.to_id.user_id,'user')
+      obj = data.contacts[msg.to_id.user_id]
     }
-    if(smartmode && !bare){
-      // Smart mode doesn't append the message to the box if it doesn't exist
-      // because when created, the box will download message history
-      if(data.msgBox[param] === undefined) return;
+    // Increase unread count if necessary
+    if(data.selectedWindow != param || data.msgBox[param] === undefined){
+      if(!obj.toread) obj.toread = 1
+      else obj.toread++
     }
+    // Update oldest message reference
+    if(!obj.oldest_message || parseInt(obj.oldest_message) > parseInt(msg.id))
+      obj.oldest_message = parseInt(msg.id)
     box = data.getMsgBox(param)
   }
   if(bare)
     box.add(msg)
   else {
-    var from = msg.from_id
-    var date = moment.unix(msg.date).fromNow()
-    name = data.getName(from,'user')
-    var txt
+    var id = msg.from_id
+    var date = moment.unix(msg.date).format('DD-MM-YYYY H:mm')
+    name = data.getName(id,'user')
+    var txt = (name || id)+' {|} {grey-fg}'+date+'{/grey-fg}\n'
     if(msg.media){
       if(msg.media.photo)
-        txt = ' <*> (Photo)'
+        txt += '{grey-fg}>>>{/grey-fg} (Photo)'
       else if(msg.media.audio)
-        txt = " <*> (Audio Message) "+msg.media.audio.duration+" seconds"
-      else if(msg.message)
-        txt = ' > '+msg.message
-      else txt = " <*> (Unsupported Message)"
+        txt += "{grey-fg}>>>{/grey-fg} (Audio Message) "+msg.media.audio.duration+" seconds"
+      else if(!msg.message)
+        txt += "{grey-fg}>>>{/grey-fg} (Unsupported Message)"
     }
-    box.add(date+' | '+(name || from)+txt)
+    if(msg.message) txt += '{grey-fg}>{/grey-fg} '+msg.message
+    if(prepend) box.prepend(txt)
+    else box.add(txt)
   }
+  return box
 }
 
 // - Entry Point -
