@@ -152,7 +152,7 @@ data.connect = function(){
 
 // Executed when connected and logged in
 data.whenReady = function(){
-  data.log('READY!')
+  data.log('Connected')
   data.connected = true
   data.downloadData()
 }
@@ -174,7 +174,7 @@ data.downloadData = function(){
   data.client.updates.getState(function(astate){
     data.updateState(astate)
     data.log(data.state.unreadCount,'unread messages')
-    data.log('Started receiving updates')
+    //data.log('Started receiving updates')
     // Can't use registerOnUpdates because it's apparently broken
     //client.registerOnUpdates(onUpdate)
     setTimeout(data.downloadUpdates,1000)
@@ -263,9 +263,9 @@ data.appendMsg = function(msg,toBoxId,bare,smartmode){
     if(msg.to_id.chat_id != undefined){
       // Is a group
       param = data.getName(msg.to_id.chat_id,'group')
-    } else if(msg.from_id === msg.to_id.user_id || msg.from_id != user.id){
+    } else if(msg.from_id === msg.to_id.user_id || msg.from_id != data.user.id){
       param = data.getName(msg.from_id,'user')
-    } else if(msg.to_id.user_id != undefined && msg.to_id.user_id != user.id) {
+    } else if(msg.to_id.user_id != undefined && msg.to_id.user_id != data.user.id) {
       // don't forget dat .user_id! don't need it in from_id...
       param = data.getName(msg.to_id.user_id,'user')
     }
