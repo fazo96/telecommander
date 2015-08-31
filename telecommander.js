@@ -368,7 +368,7 @@ function addUser(u){
   contacts[u.id] = { user: u, id: u.id}
   var name = getName(u.id,'user')
   unameToUid[name] = u.id
-  chats.addItem(name)
+  if(!chats.getItem(name)) chats.addItem(name)
 }
 
 function addGroup(group){
@@ -376,8 +376,7 @@ function addGroup(group){
   if(group.left === true) return;
   groups[group.id] = { id: group.id, title: group.title }
   gnameToGid[group.title] = group.id
-  chats.addItem(group.title)
-  log('Added group:',group.title)
+  if(!chats.getItem(group.title)) chats.addItem(group.title)
 }
 
 // Updates the current state
@@ -397,7 +396,7 @@ function onUpdate(upd){
 function downloadUpdates(){
   client.updates.getDifference(state.pts,state.date,state.qts,function(res){
     if(!res.instanceOf('api.type.updates.DifferenceEmpty')){
-      log('Got Diff: ',res.toPrintable())
+      //log('Got Diff: ',res.toPrintable())
       if(res.state){
         updateState(res.state)
       }
@@ -406,13 +405,8 @@ function downloadUpdates(){
           appendMsg(msg,undefined,false,true)
         })
       }
-      if(res.chats){
-        res.chats.list.forEach(function(c){
-          if(!groups[c.id]){
-            groups[c.id] = { id: c.id, title: c.title }
-          }
-        })
-      }
+      if(res.chats) res.chats.list.forEach(addGroup)
+      if(res.users) res.users.list.forEach(addUser)
     }
     setTimeout(downloadUpdates,1000)
   })
