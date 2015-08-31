@@ -17,6 +17,7 @@
   "homepage": "https://github.com/fazo96/telecommander#readme",
   "dependencies": {
     "blessed": "^0.1.80",
+    "commander": "^2.8.1",
     "get-log": "^1.1.5",
     "moment": "^2.10.6",
     "telegram.link": "^0.6.3"

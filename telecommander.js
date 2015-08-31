@@ -1,18 +1,23 @@
 #!/usr/bin/env node
 
+var data = {} // Hold all global data
+
 var os = require('os')
 var fs = require('fs')
 var moment = require('moment')
 var blessed = require('blessed')
-
-var data = {} // Hold all global data
-require('./lib/util.js')(data) // Load utils
-require('./lib/ui.js')(data) // Load ui
-
 var path = require('path')
 
 data.cfgDir = path.join(process.env.XDG_CONFIG_HOME || (path.join(process.env.HOME || process.env.USERPROFILE, '/.config/')), 'telecommander/')
-process.env.LOGGER_FILE = data.cfgDir+'log'
+process.env.LOGGER_FILE = process.env.LOGGER_FILE || "/tmp/telecommander"
+data.keyFile = path.join(data.cfgDir,'key')
+data.userFile = path.join(data.cfgDir,'user_data.json')
+data.telegramLink = require('telegram.link')()
+
+// Load modules
+require('./lib/cli.js')(data) // Parse command line args
+require('./lib/util.js')(data) // Load utils
+require('./lib/ui.js')(data) // Load ui
 
 /* IF YOU FORK THE APP PLEASE CHANGE THE ID
  * AND HASH IN THE APP OBJECT! THEY IDENTIFY
@@ -28,14 +33,11 @@ data.app = {
   systemVersion: os.platform()+'/'+os.release()
 }
 
-try { fs.makeDirSync(cfgDir,'0770') } catch (e) { }
-
 // Logger
 var getLogger = require('get-log')
 getLogger.PROJECT_NAME = 'telecommander'
 data.logger = getLogger('main')
 
-data.telegramLink = require('telegram.link')()
 data.authKey // our authorization key to access telegram
 data.connected = false // keep track of wether we are good to go and logged in
 
@@ -52,67 +54,75 @@ data.command = function(cmd){
   cmdname = cmdl[0]
 
   if(cmdname === 'phone'){ // So the user can provide his phone numbah
-    if(connected){
+    if(data.connected){
       return log("Silly user, you're already connected! We don't need that phone number")
     }
-    user.phone = cmd.split(' ')[1]
+    data.user.phone = cmd.split(' ')[1]
     var mindate = moment()
-    log('Checking your phone number with Telegram...')
-    client.auth.sendCode(user.phone,5,'en',function(result){
+    data.log('Checking your phone number with Telegram...')
+    data.client.auth.sendCode(data.user.phone,5,'en',function(result){
       if(result.err_code){
-        return log('Errors:',result.error_code,result.error_message)
+        return data.log('Errors:',result.error_code,result.error_message)
       }
-      //log('Res:',JSON.stringify(result))
-      user.registered = result.phone_registered
-      user.phoneCodeHash = result.phone_code_hash
+      //data.log('Res:',JSON.stringify(result))
+      data.user.registered = result.phone_registered
+      data.user.phoneCodeHash = result.phone_code_hash
       function gmd(){
         var m = moment()
         m = m.subtract(m.diff(mindate))
         return 'Please use a telegram code not older than '+m.fromNow(true)
       }
-      if(!user.registered){
-        log("Your number is not registered. Telecommander will register your account with the Telegram service")
-        log(gmd())
-        log('Ready for phone code, use command: "code <code> <name> <lastname>" to register')
-        log("If you don't want to sign up, just don't enter the code and press ESC to exit. No data was saved to the file system")
+      if(!data.user.registered){
+        data.log("Your number is not registered. Telecommander will register your account with the Telegram service")
+        data.log(gmd())
+        data.log('Ready for phone code, use command: "code <code> <name> <lastname>" to register')
+        data.log("If you don't want to sign up, just don't enter the code and press ESC to exit. No data was saved to the file system")
       } else {
-        log("Your number is already assigned to a Telegram account. Telecommander will log you in.")
-        log(gmd())
-        log("If you don't want to sign in, just don't enter the code and press ESC to exit. No data was saved to the file system")
+        data.log("Your number is already assigned to a Telegram account. Telecommander will log you in.")
+        data.log(gmd())
+        data.log("If you don't want to sign in, just don't enter the code and press ESC to exit. No data was saved to the file system")
       }
     })
 
   } else if(cmdname === 'code'){ // So the user can provide his phone code
-    if(connected){
-      return log("Silly user, you're already connected! We don't need that phone code")
+    if(data.connected){
+      return data.log("Silly user, you're already connected! We don't need that phone code")
     }
     code = cmdl[1]
     name = cmdl[2]
     lastname = cmdl[3]
-    if(((!name || !lastname) && !user.registered) || !code)
+    if(((!name || !lastname) && !data.user.registered) || !code)
       return log('insufficient arguments:',cmd)
-    cb = function(result){
-      user.id = ''+result.user.id
-      user.phone = result.user.phone
-      user.phoneCodeHash = result.phone_code_hash
-      user.username = result.user.username
-      user.first_name = result.user.first_name
-      user.last_name = result.user.last_name
+    var cb = function(result){
+      data.user.id = ''+result.user.id
+      data.user.phone = result.user.phone
+      data.user.phoneCodeHash = result.phone_code_hash
+      data.user.username = result.user.username
+      data.user.first_name = result.user.first_name
+      data.user.last_name = result.user.last_name
       // Done, write user data and key to disk
-      log('Writing Log In token and user data to',cfgDir)
-      fs.writeFile(cfgDir+'key',authKey,function(err){
-        if(err) log('FATAL: Could not write key to disk:',err)
+      try {
+        fs.mkdirSync(data.cfgDir,'0770')
+      } catch (e) {
+        if(e.code != 'EEXIST'){
+          console.error("FATAL: couldn't create configuration directory",data.cfgDir,e)
+          process.exit(-1)
+        }
+      }
+      data.log('Writing Log In token and user data to',data.cfgDir)
+      fs.writeFile(data.cfgDir+'key',data.app.authKey,function(err){
+        if(err) data.log('FATAL: Could not write key to disk:',err)
       })
-      fs.writeFile(cfgDir+'user_data.json',JSON.stringify(user),function(err){
-        if(err) log("FATAL: couldn't write user_data.json:",err)
+      fs.writeFile(data.cfgDir+'user_data.json',JSON.stringify(data.user),function(err){
+        if(err) data.log("FATAL: couldn't write user_data.json:",err)
       })
-      whenReady()
+      data.whenReady()
     }
     // Log in finally
-    if(user.registered) client.auth.signIn(user.phone,user.phoneCodeHash,code,cb)
-    else client.auth.signUp(user.phone,user.phoneCodeHash,code,name,lastname,cb)
+    if(data.user.registered) data.client.auth.signIn(data.user.phone,data.user.phoneCodeHash,code,cb)
+    else data.client.auth.signUp(data.user.phone,data.user.phoneCodeHash,code,name,lastname,cb)
   } else {
-    log('Command not found.')
+    data.log('Command not found.')
   }
 }
 
@@ -132,9 +142,9 @@ data.sendMsg = function(name,str){
 
 // Connects to telegram
 data.connect = function(){
-  data.client = data.telegramLink.createClient(data.app, data.telegramLink.PROD_PRIMARY_DC, function(){
+  data.client = data.telegramLink.createClient(data.app, data.dataCenter, function(){
     if(!data.app.authKey){
-      log('Downloading Authorization Key...')
+      data.log('Downloading Authorization Key...')
       data.client.createAuthKey(function(auth){
         data.app.authKey = auth.key.encrypt('password') // Will add security later, I promise
         // Writes the new encrypted key to disk
@@ -211,7 +221,7 @@ data.getMessages = function(name,box){
   //log('Name to obj:',name)
   var obj = data.nameToObj(name)
   if(!obj || !obj.id){
-    return data.log("Can't get messages",obj,obj.id,obj.title)
+    return //data.log("Can't get messages",obj,obj.id,obj.title)
   }
   var type = obj.title?'group':'user'
   var peer = data.idToPeer(obj.id,type)
@@ -300,18 +310,17 @@ data.appendMsg = function(msg,toBoxId,bare,smartmode){
 // - Entry Point -
 // Load authKey and userdata from disk, then act depending on outcome
 data.screen.render()
-var keyPath = data.cfgDir+'key'
 data.log('Loading files...')
-fs.exists(keyPath,function(exists){
+fs.exists(data.keyFile,function(exists){
   if(exists){
     //log('Authorization Key found')
-    fs.readFile(keyPath,function(err,content){
+    fs.readFile(data.keyFile,function(err,content){
       if(err)
         data.log('Error while reading key:',err)
       else {
         data.app.authKey = data.telegramLink.retrieveAuthKey(content,'password') // yeah sorry just testing
         data.log('Authorization Key found')
-        fs.readFile(data.cfgDir+'user_data.json',function(err,res){
+        fs.readFile(data.userFile,function(err,res){
           if(err)
             data.log("FATAL: couldn't read user_data.json")
           else {

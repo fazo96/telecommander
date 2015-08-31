@@ -41,11 +41,12 @@ What's missing (for future versions up to 1.0)
 - Do everything (except writing, duh) with the mouse!
 - Cool interface (it's already ok, just not as cool as I want it to be)
 - Search, Tab completion, command history
+- Themes and configurability! Basic scripting!
 - Optimization and automatic datacenter switching
 
 What could be available after 1.0:
 
-- plugin API, scripting support
+- polished plugin API, scripting support
 - Telecommander as a library
 - Parsable output mode
 - More cool stuff!
