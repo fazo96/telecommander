@@ -41,30 +41,35 @@ screen.title = "Telecommander"
 
 var defaultStyle = {
   fg: 'white',
-  border: { fg: 'gray' },
+  border: { fg: 'grey' },
   scrollbar: {
-    bg: 'blue',
-    fg: 'red'
+    ch: '*'
   }
 }
 
 // Contact list window
 var chats = blessed.list({
+  keys: true,
+  label: 'Conversations',
   left: 0,
   top:0,
   height: screen.height-3,
   width: '20%',
   border: { type: 'line' },
   mouse: true,
-  invertSelected: false,
+  invertSelected: true,
   style: defaultStyle,
 })
-chats.style.selected = { bg: 'blue' }
+chats.style.item = { fg: 'grey' }
+chats.style.selected = { fg: 'white' }
+chats.focus()
 
 // Function to create a log box
-function mkBox(){
+function mkBox(label){
   var box = blessed.log({
+    keys: true,
     right: 0,
+    label: label,
     width: '80%',
     height: screen.height - cmdline.height,
     border: { type: 'line' },
@@ -78,6 +83,8 @@ function mkBox(){
 
 // Command line prompt
 var cmdline = blessed.textbox({
+  keys: true,
+  label: 'Command for Telecommander',
   inputOnFocus: true,
   bottom: 0,
   left: 'center',
@@ -91,7 +98,7 @@ var statusWindow = "Status"
 
 // mgsBox holds the chat boxes for every list entry
 var msgBox = { }
-msgBox[statusWindow] = mkBox()
+msgBox[statusWindow] = mkBox(statusWindow)
 
 // Add stuff to the screen
 screen.append(chats);
@@ -106,6 +113,9 @@ screen.on('resize',function(){
   }
   chats.height = screen.height - cmdline.height
   screen.render()
+})
+screen.key('tab',function(){
+  screen.focusPush(chats)
 })
 screen.render()
 
@@ -206,12 +216,18 @@ function command(cmd){
 chats.on('select',function(selected){
   log('SELECT:',selected.content)
   switchToBox(selected.content)
+  screen.focusPush(cmdline)
+  screen.render()
 })
 
 function switchToBox(boxname){
   if(selectedWindow && msgBox[selectedWindow])
     msgBox[selectedWindow].hide()
   selectedWindow = boxname;
+  if(selectedWindow != statusWindow)
+    cmdline.setLabel('to '+selectedWindow)
+  else
+    cmdline.setLabel('Command for Telecommander')
   var newb = getMsgBox(selectedWindow)
   newb.show()
 }
@@ -223,8 +239,8 @@ function getMsgBox(chat,switchto){
     return msgBox[statusWindow]
   }
   if(!msgBox[chat]){
-    log('Generating window: "'+chat+'"')
-    msgBox[chat] = mkBox()
+    //log('Generating window: "'+chat+'"')
+    msgBox[chat] = mkBox(chat)
     screen.append(msgBox[chat])
     getMessages(chat,msgBox[chat])
   } // else log('Getting window','"'+chat+'"')
@@ -251,7 +267,7 @@ cmdline.on('submit',function(value){
   cmdline.focus()
 })
 
-cmdline.focus() // make sure prompt is focused
+//cmdline.focus() // make sure prompt is focused
 
 function quit(){
   if(connected || client != undefined){
@@ -263,7 +279,7 @@ function quit(){
 }
 
 // Catch ctrl-c or escape event and close program
-cmdline.key(['escape','C-c'], function(ch,key){
+screen.key(['escape','C-c'], function(ch,key){
   quit()
 });
 
@@ -291,9 +307,9 @@ function sendMsg(name,str){
   }
   var peer = idToPeer(nameToObj(name).id,nameToObj(name).title?'group':'user')
   var randid = parseInt(Math.random() * 1000000000)
-  log('Sending Message to:',peer.toPrintable())
+  //log('Sending Message to:',peer.toPrintable())
   client.messages.sendMessage(peer,str,randid,function(sent){
-    log('Sent message:','"'+str+'"','to:',selectedWindow+':',sent.toPrintable())
+    //log('Sent message:','"'+str+'"','to:',selectedWindow+':',sent.toPrintable())
   })
 }
 
@@ -376,25 +392,17 @@ function updateState(newstate){
 // process an update
 function onUpdate(upd){
   log('Got Update:',upd.toPrintable())
-  // Process update
-  if(update.message){
-    // It's a chat message
-    log('Writing chat message to ',update.from_id)
-    //appendMsg(update,getName(update.from_id))
-  }
 }
 
 function downloadUpdates(){
   client.updates.getDifference(state.pts,state.date,state.qts,function(res){
     if(!res.instanceOf('api.type.updates.DifferenceEmpty')){
-      //log('Got Diff: ',res.toPrintable())
+      log('Got Diff: ',res.toPrintable())
       if(res.state){
         updateState(res.state)
       }
       if(res.new_messages){
         res.new_messages.list.forEach(function(msg){
-          if(!msg.message) return log('Empty message!',msg)
-          //log('Scheduling message: '+msg.message)
           appendMsg(msg,undefined,false,true)
         })
       }
@@ -421,7 +429,7 @@ function getName(id,type){
     return groups[id].title
   else if(type === 'user' && contacts[id])
     return nameForUser(contacts[id].user)
-  else log('Failed to find name for:',id)
+  else log('Failed to find name for',type,id)
 }
 
 // Get message history with given name in the given box
@@ -440,7 +448,7 @@ function getMessages(name,box){
   if(!peer) return log('Could not find peer:',name)
   client.messages.getHistory(peer,0,-1,20,function(res){
     //log(res.toPrintable())
-    log('Got history for: '+getName(peer.user_id||peer.chat_id,peer.chat_id?'group':'user'))
+    //log('Got history for: '+getName(peer.user_id||peer.chat_id,peer.chat_id?'group':'user'))
     if(!res.messages){
       return box.add(res.toPrintable())
     }
@@ -450,7 +458,7 @@ function getMessages(name,box){
     if(res.messages.list.length === 0)
       return appendToUserBox('No messages.',res)
     res.messages.list.forEach(function(msg){
-      if(!msg.message) return log('Empty message!',msg.toPrintable())
+      //if(!msg.message) return log('Empty message!',msg.toPrintable())
       //log('Scheduling message: '+msg.toPrintable())
       appendMsg(msg)
     })
@@ -504,7 +512,17 @@ function appendMsg(msg,toBoxId,bare,smartmode){
     var from = msg.from_id
     var date = moment.unix(msg.date).fromNow()
     name = getName(from,'user')
-    box.add(date+' | '+(name || from)+' > '+msg.message)
+    var txt
+    if(msg.media){
+      if(msg.media.photo)
+        txt = ' <*> (Photo)'
+      else if(msg.media.audio)
+        txt = " <*> (Audio Message) "+msg.media.audio.duration+" seconds"
+      else if(msg.message)
+        txt = ' > '+msg.message
+      else txt = " <*> (Unsupported Message)"
+    }
+    box.add(date+' | '+(name || from)+txt)
   }
 }
 
