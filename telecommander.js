@@ -155,6 +155,7 @@ data.whenReady = function(){
   data.log('Connected')
   data.connected = true
   data.downloadData()
+  data.chats.focus()
 }
 
 // Downloads stuff
@@ -216,7 +217,7 @@ data.getMessages = function(name,box){
   var peer = data.idToPeer(obj.id,type)
   box.add('Downloading message history for '+name)
   if(!peer) return log('Could not find peer:',name)
-  data.client.messages.getHistory(peer,0,-1,20,function(res){
+  data.client.messages.getHistory(peer,0,-1,100,function(res){
     //log(res.toPrintable())
     //log('Got history for: '+getName(peer.user_id||peer.chat_id,peer.chat_id?'group':'user'))
     if(!res.messages){
