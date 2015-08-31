@@ -245,10 +245,10 @@ data.appendToUserBox = function(msg,context){
     }
   }
   if(goesto === undefined){
-    if(context.users.list[0].user_id == user.id){
-      goesto = data.getMsgBox(getName(context.users.list[1].id,'user'))
+    if(context.users.list[0].user_id == data.user.id){
+      goesto = data.getMsgBox(data.getName(context.users.list[1].id,'user'))
     } else{
-      goesto = data.getMsgBox(getName(context.users.list[0].id,'user'))
+      goesto = data.getMsgBox(data.getName(context.users.list[0].id,'user'))
     }
   }
   data.appendMsg(msg,goesto,true)
