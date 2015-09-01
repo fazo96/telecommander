@@ -57,70 +57,13 @@ data.command = function(cmd){
     if(data.connected){
       return log("Silly user, you're already connected! We don't need that phone number")
     }
-    data.user.phone = cmd.split(' ')[1]
-    var mindate = moment()
-    data.log('Checking your phone number with Telegram...')
-    data.client.auth.sendCode(data.user.phone,5,'en',function(result){
-      if(result.err_code){
-        return data.log('Errors:',result.error_code,result.error_message)
-      }
-      //data.log('Res:',JSON.stringify(result))
-      data.user.registered = result.phone_registered
-      data.user.phoneCodeHash = result.phone_code_hash
-      function gmd(){
-        var m = moment()
-        m = m.subtract(m.diff(mindate))
-        return 'Please use a telegram code not older than '+m.fromNow(true)
-      }
-      if(!data.user.registered){
-        data.log("Your number is not registered. Telecommander will register your account with the Telegram service")
-        data.log(gmd())
-        data.log('Ready for phone code, use command: "code <code> <name> <lastname>" to register')
-        data.log("If you don't want to sign up, just don't enter the code and press ESC to exit. No data was saved to the file system")
-      } else {
-        data.log("Your number is already assigned to a Telegram account. Telecommander will log you in.")
-        data.log(gmd())
-        data.log("If you don't want to sign in, just don't enter the code and press ESC to exit. No data was saved to the file system")
-      }
-    })
+
 
   } else if(cmdname === 'code'){ // So the user can provide his phone code
     if(data.connected){
       return data.log("Silly user, you're already connected! We don't need that phone code")
     }
-    code = cmdl[1]
-    name = cmdl[2]
-    lastname = cmdl[3]
-    if(((!name || !lastname) && !data.user.registered) || !code)
-      return log('insufficient arguments:',cmd)
-    var cb = function(result){
-      data.user.id = ''+result.user.id
-      data.user.phone = result.user.phone
-      data.user.phoneCodeHash = result.phone_code_hash
-      data.user.username = result.user.username
-      data.user.first_name = result.user.first_name
-      data.user.last_name = result.user.last_name
-      // Done, write user data and key to disk
-      try {
-        fs.mkdirSync(data.cfgDir,'0770')
-      } catch (e) {
-        if(e.code != 'EEXIST'){
-          console.error("FATAL: couldn't create configuration directory",data.cfgDir,e)
-          process.exit(-1)
-        }
-      }
-      data.log('Writing Log In token and user data to',data.cfgDir)
-      fs.writeFile(data.cfgDir+'key',data.app.authKey,function(err){
-        if(err) data.log('FATAL: Could not write key to disk:',err)
-      })
-      fs.writeFile(data.cfgDir+'user_data.json',JSON.stringify(data.user),function(err){
-        if(err) data.log("FATAL: couldn't write user_data.json:",err)
-      })
-      data.whenReady()
-    }
-    // Log in finally
-    if(data.user.registered) data.client.auth.signIn(data.user.phone,data.user.phoneCodeHash,code,cb)
-    else data.client.auth.signUp(data.user.phone,data.user.phoneCodeHash,code,name,lastname,cb)
+
   } else {
     data.log('Command not found.')
   }
@@ -142,15 +85,86 @@ data.sendMsg = function(name,str){
   })
 }
 
+data.onPhoneCode = function(something,s){
+  if(s === null){ // User cancelled
+    process.exit(0)
+  }
+  var cmdl = s.split(' ')
+  code = cmdl[0]
+  name = cmdl[1]
+  lastname = cmdl[2]
+  if(((!name || !lastname) && !data.user.registered) || !code)
+    return log('insufficient arguments:',cmd) // TODO: handle this better!
+  var cb = function(result){
+    data.user.id = ''+result.user.id
+    data.user.phone = result.user.phone
+    data.user.phoneCodeHash = result.phone_code_hash
+    data.user.username = result.user.username
+    data.user.first_name = result.user.first_name
+    data.user.last_name = result.user.last_name
+    // Done, write user data and key to disk
+    try {
+      fs.mkdirSync(data.cfgDir,'0770')
+    } catch (e) {
+      if(e.code != 'EEXIST'){
+        console.error("FATAL: couldn't create configuration directory",data.cfgDir,e)
+        process.exit(-1)
+      }
+    }
+    data.log('Writing Log In token and user data to',data.cfgDir)
+    fs.writeFile(data.cfgDir+'key',data.app.authKey,function(err){
+      if(err) data.log('FATAL: Could not write key to disk:',err)
+    })
+    fs.writeFile(data.cfgDir+'user_data.json',JSON.stringify(data.user),function(err){
+      if(err) data.log("FATAL: couldn't write user_data.json:",err)
+    })
+    data.whenReady()
+  }
+  // Log in finally
+  if(data.user.registered) data.client.auth.signIn(data.user.phone,data.user.phoneCodeHash,code,cb)
+  else data.client.auth.signUp(data.user.phone,data.user.phoneCodeHash,code,name,lastname,cb)
+}
+
+data.onPhoneNumber = function(something,s){
+  if(s === null){ // User cancelled
+    process.exit(0)
+  }
+  data.user.phone = s.trim()
+  var mindate = moment()
+  data.log('Checking your phone number with Telegram...')
+  data.client.auth.sendCode(data.user.phone,5,'en',function(result){
+    if(result.err_code){
+      return data.log('Errors:',result.error_code,result.error_message)
+    }
+    //data.log('Res:',JSON.stringify(result))
+    data.user.registered = result.phone_registered
+    data.user.phoneCodeHash = result.phone_code_hash
+    var msg
+    if(!data.user.registered){
+      msg = "Your number ("+data.user.phone+") is not registered.\nTelecommander will register your account with the Telegram service."
+    } else {
+      msg = "Your number ("+data.user.phone+") is already assigned to a Telegram account.\nTelecommander will log you in."
+    }
+    msg += "\nPress ESC to exit now, or enter to continue"
+    data.popup.display(msg,0,function(){
+      data.popup.hide()
+      data.promptBox.input('Your telegram code:','',data.onPhoneCode)
+    })
+  })
+}
+
 // Connects to telegram
 data.connect = function(){
+  data.load('Connecting...')
   data.client = data.telegramLink.createClient(data.app, data.dataCenter, function(){
     if(!data.app.authKey){
       data.log('Downloading Authorization Key...')
       data.client.createAuthKey(function(auth){
         data.app.authKey = auth.key.encrypt('password') // Will add security later, I promise
         // Writes the new encrypted key to disk
-        data.log('Ready for phone number, use command: phone <number>')
+        data.loader.stop()
+        //data.log('Ready for phone number, use command: phone <number>')
+        data.promptBox.input('Phone number (international format):','+',data.onPhoneNumber)
       })
     } else {
       data.whenReady()
@@ -164,7 +178,7 @@ data.connect = function(){
 
 // Executed when connected and logged in
 data.whenReady = function(){
-  data.log('Connected')
+  data.load('Connected')
   data.connected = true
   data.downloadData()
   data.chats.focus()
@@ -172,8 +186,7 @@ data.whenReady = function(){
 
 // Downloads stuff
 data.downloadData = function(){
-  data.loader.load('Downloading data')
-  data.screen.render()
+  data.load('Downloading data')
   data.client.contacts.getContacts('',function(cont){
     //data.chats.clearItems()
     //data.chats.add(data.statusWindow)
@@ -184,6 +197,7 @@ data.downloadData = function(){
   data.client.messages.getDialogs(0,0,10,function(dialogs){
     if(dialogs && dialogs.chats && dialogs.chats.list)
       dialogs.chats.list.forEach(data.addGroup)
+    data.loader.stop()
   })
 
   data.client.updates.getState(function(astate){
@@ -236,6 +250,7 @@ data.getMessages = function(name,box){
   if(!peer) return log('Could not find peer:',name)
   data.downloadingMessages = true
   var oldnlines = box.getLines().length
+  if(data.selectedWindow === name) data.load('Downloading history...')
   data.client.messages.getHistory(peer,0,obj.oldest_message||0,10,function(res){
     //log(res.toPrintable())
     //log('Got history for: '+getName(peer.user_id||peer.chat_id,peer.chat_id?'group':'user'))
@@ -251,6 +266,7 @@ data.getMessages = function(name,box){
     })
     if(oldnlines == 0) box.setScrollPerc(100)
     //box.add(obj.oldest_message)
+    data.loader.stop()
     data.downloadingMessages = false
   })
 }
@@ -308,20 +324,25 @@ data.appendMsg = function(msg,toBoxId,bare,prepend){
     box.add(msg)
   else {
     var id = msg.from_id
-    var date = moment.unix(msg.date).format('DD-MM-YYYY H:mm')
-    name = data.getName(id,'user')
-    var txt = (name || id)+' {|} {grey-fg}'+date+'{/grey-fg}\n'
-    if(msg.media){
-      if(msg.media.photo)
-        txt += '{grey-fg}>>>{/grey-fg} (Photo)'
-      else if(msg.media.audio)
-        txt += "{grey-fg}>>>{/grey-fg} (Audio Message) "+msg.media.audio.duration+" seconds"
-      else if(!msg.message)
-        txt += "{grey-fg}>>>{/grey-fg} (Unsupported Message)"
+    if(!id){ // Weird zombie message!
+      data.log('Zombie Message:',msg.toPrintable())
+      return box
+    } else { // Regular message
+      var date = moment.unix(msg.date).format('DD-MM-YYYY H:mm')
+      name = data.getName(id,'user')
+      var txt = (name || id)+' {|} {grey-fg}'+date+'{/grey-fg}\n'
+      if(msg.media){
+        if(msg.media.photo)
+          txt += '{grey-fg}>>>{/grey-fg} (Photo)'
+        else if(msg.media.audio)
+          txt += "{grey-fg}>>>{/grey-fg} (Audio Message) "+msg.media.audio.duration+" seconds"
+        else if(!msg.message)
+          txt += "{grey-fg}>>>{/grey-fg} (Unsupported Message)"
+      }
+      if(msg.message) txt += '{grey-fg}>{/grey-fg} '+msg.message
+      if(prepend) box.prepend(txt)
+      else box.add(txt)
     }
-    if(msg.message) txt += '{grey-fg}>{/grey-fg} '+msg.message
-    if(prepend) box.prepend(txt)
-    else box.add(txt)
   }
   // Mark messages as read if needed
   if(param === data.selectedWindow) data.markAsRead(param)
@@ -330,8 +351,8 @@ data.appendMsg = function(msg,toBoxId,bare,prepend){
 
 // - Entry Point -
 // Load authKey and userdata from disk, then act depending on outcome
+data.load('Starting up...')
 data.screen.render()
-data.log('Loading files...')
 fs.exists(data.keyFile,function(exists){
   if(exists){
     //log('Authorization Key found')

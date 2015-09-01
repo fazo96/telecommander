@@ -14,14 +14,13 @@ As of __now__, __Telecommander lets you__:
 - Chat in groups and in private (it also marks messages as read when you read them)
 - Know when you have unread messages
 - Do everything __completely in the terminal, even via ssh__ using only the keyboard
-- Do everything (except writing, duh) using only the mouse!
+- Do everything (except writing messages, duh) using only the mouse, in the terminal!
 - Navigate your contact and chat list
 - Scroll back to view old messages
 
 Waht's missing for version _0.1.0_ (__Almost done!__):
 
 - View who's online and when was the last time they logged in
-- Testing and tying up loose ends in user interface and code quality
 
 What's missing (for future versions up to 1.0)
 
@@ -35,7 +34,6 @@ What's missing (for future versions up to 1.0)
 - Sign out (without having to manually delete files)
 - Delete account
 - Reply to and Forward message support
-- Cool interface (it's already ok, just not as cool as I want it to be)
 - Search, Tab completion, chatbox history
 - Send multiline messages
 - Themes and configurability! Basic scripting!
@@ -86,7 +84,7 @@ $ telecommander
 # either swap it with python 2 or if you're on arch linux
 # and/or your python 2 executable is "python2" just run this:
 
-$ PYTHON=python2 npm install [-g .] 
+$ PYTHON=python2 npm install [-g .]
 ```
 
 __PLEASE READ:__ if you fork the project and want to create a custom version of
