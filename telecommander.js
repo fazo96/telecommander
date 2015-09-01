@@ -50,23 +50,9 @@ data.log = function(){
 }
 
 data.command = function(cmd){
-  cmdl = cmd.split(' ')
-  cmdname = cmdl[0]
-
-  if(cmdname === 'phone'){ // So the user can provide his phone numbah
-    if(data.connected){
-      return log("Silly user, you're already connected! We don't need that phone number")
-    }
-
-
-  } else if(cmdname === 'code'){ // So the user can provide his phone code
-    if(data.connected){
-      return data.log("Silly user, you're already connected! We don't need that phone code")
-    }
-
-  } else {
-    data.log('Command not found.')
-  }
+  //cmdl = cmd.split(' ')
+  //cmdname = cmdl[0]
+  data.log('Commands are not implemented!')
 }
 
 // Send a message
