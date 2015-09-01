@@ -133,10 +133,12 @@ data.sendMsg = function(name,str){
   }
   var obj = data.nameToObj(name)
   var peer = data.idToPeer(obj.id,obj.title?'group':'user')
-  var randid = parseInt(Math.random() * 1000000000)
-  //log('Sending Message to:',peer.toPrintable())
+  var randid = parseInt(Math.random() * 999999999)
+  // Fix bug in telegram.link that doesn't send strings with accented letters
+  str = str.replace('è',"e'").replace('ù',"u'").replace('à',"a'").replace('ò',"o'").replace('ì',"i'")
+  //data.log('Sending Message to:',peer.toPrintable())
   data.client.messages.sendMessage(peer,str,randid,function(sent){
-    //log('Sent message:','"'+str+'"','to:',selectedWindow+':',sent.toPrintable())
+    data.log('Sent message:','"'+str+'"','to:',data.selectedWindow+':',sent.toPrintable())
   })
 }
 
@@ -170,11 +172,13 @@ data.whenReady = function(){
 
 // Downloads stuff
 data.downloadData = function(){
-  data.log('Downloading data...')
+  data.loader.load('Downloading data')
+  data.screen.render()
   data.client.contacts.getContacts('',function(cont){
     //data.chats.clearItems()
     //data.chats.add(data.statusWindow)
     cont.users.list.forEach(data.addUser)
+    data.loader.stop()
   })
 
   data.client.messages.getDialogs(0,0,10,function(dialogs){
@@ -293,9 +297,11 @@ data.appendMsg = function(msg,toBoxId,bare,prepend){
       if(!obj.toread) obj.toread = 1
       else obj.toread++
     }
-    // Update oldest message reference
+    // Update oldest and latest message reference
     if(!obj.oldest_message || parseInt(obj.oldest_message) > parseInt(msg.id))
       obj.oldest_message = parseInt(msg.id)
+    if(!obj.latest_message || parseInt(obj.latest_message) < parseInt(msg.id))
+      obj.latest_message = parseInt(msg.id)
     box = data.getMsgBox(param)
   }
   if(bare)
@@ -317,6 +323,8 @@ data.appendMsg = function(msg,toBoxId,bare,prepend){
     if(prepend) box.prepend(txt)
     else box.add(txt)
   }
+  // Mark messages as read if needed
+  if(param === data.selectedWindow) data.markAsRead(param)
   return box
 }
 
