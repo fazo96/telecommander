@@ -25,6 +25,7 @@ As of __now__, __Telecommander lets you__:
 Waht's missing for version _0.1.0_ (__Almost done!__):
 
 - View who's online and when was the last time they logged in
+- Automatic datacenter switching
 - Fixing a few bugs:
     - unread messages aren't displayed on session start, only if they were received when the client was open
 
@@ -43,8 +44,7 @@ What's missing (for future versions up to 1.0)
 - Search, Tab completion, chatbox history
 - Send multiline messages
 - Themes and configurability! Basic scripting!
-- Optimization and automatic datacenter switching
-
+- Optimization
 What could be available after 1.0:
 
 - polished plugin API, scripting support
