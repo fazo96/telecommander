@@ -2,7 +2,11 @@
 
 The experimental __full-featured curses-like command line client for Telegram__ is in heavy development, but also __already usable!__
 
+![Demo](http://i.imgur.com/uv0Odoa.gif)
+
 It uses [enricostara](http://github.com/enricostara)'s [telegram.link](http://github.com/enricostara/telegram.link) to connect to Telegram and [chjj](http://github.com/chjj)'s [blessed](http://github.com/chjj/blessed) for the UI.
+
+In the GIF demo you can see how it looks. It was recorded with [ttystudio](http://github.com/chjj/ttystudio), which while being an excellent software, doen't really represent how good it looks with a nice font and proper color scheme. I removed most of my contacts by hacking the program to protect their privacy, but I actually have a few dozen of them and that doesn't cause issues.
 
 ### What it can and can't do
 

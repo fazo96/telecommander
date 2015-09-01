@@ -251,7 +251,7 @@ data.getMessages = function(name,box){
   data.downloadingMessages = true
   var oldnlines = box.getLines().length
   if(data.selectedWindow === name) data.load('Downloading history...')
-  data.client.messages.getHistory(peer,0,obj.oldest_message||0,10,function(res){
+  data.client.messages.getHistory(peer,0,obj.oldest_message||0,box.height,function(res){
     //log(res.toPrintable())
     //log('Got history for: '+getName(peer.user_id||peer.chat_id,peer.chat_id?'group':'user'))
     if(!res.messages){
@@ -264,8 +264,10 @@ data.getMessages = function(name,box){
     res.messages.list.forEach(function(msg){
       data.appendMsg(msg,undefined,false,true)
     })
-    if(oldnlines == 0) box.setScrollPerc(100)
+    if(box.data.downloadedHistoryTimes === 0) // Downloading messages for the first time
+      box.setScrollPerc(100)
     //box.add(obj.oldest_message)
+    box.data.downloadedHistoryTimes++
     data.loader.stop()
     data.downloadingMessages = false
   })
