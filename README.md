@@ -9,38 +9,35 @@ It uses [enricostara](http://github.com/enricostara)'s [telegram.link](http://gi
 As of __now__, __Telecommander lets you__:
 
 - Sign up for telegram
-    - not sure it totally works, not really the priority for now
-- Sign in with a code sent via SMS or telegram
-- Keep signed in until you delete the files stored in `~/.config/telecommander` or the session expires
-- Do everything __completely in the terminal, even via ssh__
-- Navigate your contact and chat list __using the mouse__
-- Do basic usage with __no complicated commands to learn__
-- Chat with your friends!
-- Chat in groups!
+    - not sure it totally works, not really the priority for now! If it doesn't work and you need to sign up, use [Telegram Web](http://web.telegram.org)
+- Sign in with a code sent via SMS or Telegram until you delete the Telecommander session files or the session expires
+- Chat in groups and in private (it also marks messages as read when you read them)
+- Know when you have unread messages
+- Do everything __completely in the terminal, even via ssh__ using only the keyboard
+- Do everything (except writing, duh) using only the mouse!
+- Navigate your contact and chat list
+- Scroll back to view old messages
 
-For version _0.1.0_ (__Almost done!__):
+Waht's missing for version _0.1.0_ (__Almost done!__):
 
-- Notifications
-- Online Status viewing and management
-- Automatic marking of messages as read
+- View who's online and when was the last time they logged in
+- Testing and tying up loose ends in user interface and code quality
 
 What's missing (for future versions up to 1.0)
 
-- Scrolling back to view old messages
 - Create, modify, manage groups
 - Secret chats
 - Manage your contacts
 - Manage your profile
 - Easy bot interaction
-- Send and download files, audio messages, images
-- Open links
+- Send and view files, audio messages, images, videos, links
 - Emoticons (they show up as question marks)
 - Sign out (without having to manually delete files)
 - Delete account
 - Reply to and Forward message support
-- Do everything (except writing, duh) with the mouse!
 - Cool interface (it's already ok, just not as cool as I want it to be)
-- Search, Tab completion, command history
+- Search, Tab completion, chatbox history
+- Send multiline messages
 - Themes and configurability! Basic scripting!
 - Optimization and automatic datacenter switching
 
@@ -51,7 +48,11 @@ What could be available after 1.0:
 - Parsable output mode
 - More cool stuff!
 
-A lot of features depend on [telegram.link](http://telegram.link)'s still incomplete implementation sadly, but it'll come around eventually.
+Most of features depend on [telegram.link](http://telegram.link)'s still alpha-quality implementation sadly, but it'll come around eventually.
+
+### Installing
+
+This section shows how to install Telecommander. It will be populated when __0.1__ is done!
 
 ### Hacking
 
@@ -64,6 +65,8 @@ To start Telecommander from source you'll need:
 Let's set it up:
 
 ```sh
+# Download the source
+
 $ git clone https://github.com/fazo96/Telecommander.git
 $ cd Telecommander
 
@@ -79,7 +82,7 @@ $ npm install -g .
 $ telecommander
 
 # If npm install fails because of something about "gyp"
-# it means your python points to python 3
+# it probably means your python points to python 3
 # either swap it with python 2 or if you're on arch linux
 # and/or your python 2 executable is "python2" just run this:
 
