@@ -21,6 +21,8 @@ As of __now__, __Telecommander lets you__:
 Waht's missing for version _0.1.0_ (__Almost done!__):
 
 - View who's online and when was the last time they logged in
+- Fixing a few bugs:
+    - unread messages aren't displayed on session start, only if they were received when the client was open
 
 What's missing (for future versions up to 1.0)
 
