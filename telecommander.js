@@ -176,6 +176,7 @@ data.downloadData = function(){
   data.client.contacts.getContacts('',function(cont){
     //data.chats.clearItems()
     //data.chats.add(data.statusWindow)
+    //data.log(cont.toPrintable())
     cont.users.list.forEach(data.addUser)
     data.loader.stop()
   })
@@ -191,7 +192,7 @@ data.downloadData = function(){
     data.log(data.state.unreadCount,'unread messages')
     //data.log('Started receiving updates')
     // Can't use registerOnUpdates because it's apparently broken
-    //client.registerOnUpdates(onUpdate)
+    //data.client.registerOnUpdates(data.onUpdate)
     setTimeout(data.downloadUpdates,1000)
   })
 }
@@ -212,10 +213,19 @@ data.downloadUpdates = function(){
           data.appendMsg(msg,undefined,false,false)
         })
       }
+      if(res.other_updates){
+        for(c in res.other_updates.list) data.onUpdate(res.other_updates.list[c])
+      }
       data.rebuildChatList()
     }
     setTimeout(data.downloadUpdates,1000)
   })
+}
+
+data.onUpdate = function(o){
+  if(o.instanceOf('api.type.UpdateUserStatus')){
+    data.updateOnlineStatus(o.user_id,o.status)
+  }
 }
 
 // Get message history with given name in the given box
