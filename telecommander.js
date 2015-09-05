@@ -327,7 +327,7 @@ data.appendMsg = function(msg,toBoxId,bare,prepend){
       return box
     } else { // Regular message
       var date = moment.unix(msg.date).format('DD-MM-YYYY H:mm')
-      name = data.getName(id,'user')
+      name = data.getName(id,'user',true)
       var txt = (name || id)+' {|} {grey-fg}'+date+'{/grey-fg}\n'
       if(msg.media){
         if(msg.media.photo)
@@ -337,7 +337,11 @@ data.appendMsg = function(msg,toBoxId,bare,prepend){
         else if(!msg.message)
           txt += "{grey-fg}>>>{/grey-fg} (Unsupported Message)"
       }
-      if(msg.message) txt += '{grey-fg}>{/grey-fg} '+msg.message
+      if(msg.message){
+        txt += msg.message.split('\n').map(function(s){
+          return '{grey-fg}>{/grey-fg} '+s
+        }).join('\n')
+      }
       if(prepend) box.prepend(txt)
       else box.add(txt)
     }
