@@ -26,6 +26,8 @@ As of __now__, __Telecommander lets you__:
 Waht's missing for version _0.1.0_ (__Almost done!__):
 
 - Download latest messages on session start and show unreads
+- Fix issue #1
+- Correctly display joined group / left group messages
 
 What's missing (for future versions up to 1.0)
 
