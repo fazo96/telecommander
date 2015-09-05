@@ -41,7 +41,6 @@ What's missing (for future versions up to 1.0)
 - Reply to and Forward message support
 - Search, Tab completion, chatbox history
 - Send multiline messages
-- Automatic datacenter switching
 - Themes and configurability! Basic scripting!
 - Optimization
 What could be available after 1.0:

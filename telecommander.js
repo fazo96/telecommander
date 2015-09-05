@@ -88,6 +88,7 @@ data.onPhoneCode = function(something,s){
     data.user.username = result.user.username
     data.user.first_name = result.user.first_name
     data.user.last_name = result.user.last_name
+    data.user.dataCenter = data.dataCenter
     // Done, write user data and key to disk
     try {
       fs.mkdirSync(data.cfgDir,'0770')
@@ -111,6 +112,15 @@ data.onPhoneCode = function(something,s){
   else data.client.auth.signUp(data.user.phone,data.user.phoneCodeHash,code,name,lastname,cb)
 }
 
+data.useDatacenter = function(toDC,f){
+  data.log('Using DC:',toDC)
+  data.client.getDataCenters(function(dcs){
+    data.dataCenters = dcs
+    data.dataCenter = data.dataCenters[toDC || data.dataCenters.nearest]
+    if(f && f.call) f(data.dataCenter)
+  })
+}
+
 data.onPhoneNumber = function(something,s){
   if(s === null){ // User cancelled
     process.exit(0)
@@ -120,29 +130,42 @@ data.onPhoneNumber = function(something,s){
   data.log('Checking your phone number with Telegram...')
   data.client.auth.sendCode(data.user.phone,5,'en',function(result){
     if(result.instanceOf('mtproto.type.Rpc_error')){
-      data.switchToBox(data.statusWindow)
-      return data.log('Errors:',result.error_code,result.error_message)
+      if(result.error_code === 303){ // PHONE_MIGRATE_X error (wrong datacenter)
+        data.load('Finding Datacenter...')
+        data.useDatacenter('DC_'+result.error_message.slice(-1),function(dc){
+          data.client.end(function(){
+            data.connect(true)
+          })
+        })
+      } else {
+        data.switchToBox(data.statusWindow)
+        data.log('Errors:',result.error_code,result.error_message)
+      }
+    } else { // NO ERROR
+      //data.log('Res:',JSON.stringify(result))
+      data.user.registered = result.phone_registered
+      data.user.phoneCodeHash = result.phone_code_hash
+      var msg
+      if(!data.user.registered){
+        msg = "Your number ("+data.user.phone+") is not registered.\nTelecommander will register your account with the Telegram service."
+      } else {
+        msg = "Your number ("+data.user.phone+") is already assigned to a Telegram account.\nTelecommander will log you in."
+      }
+      msg += "\nPress ESC to exit now, or enter to continue"
+      data.popup.display(msg,0,function(){
+        data.popup.hide()
+        data.promptBox.input('Your telegram code:','',data.onPhoneCode)
+      })
     }
-    //data.log('Res:',JSON.stringify(result))
-    data.user.registered = result.phone_registered
-    data.user.phoneCodeHash = result.phone_code_hash
-    var msg
-    if(!data.user.registered){
-      msg = "Your number ("+data.user.phone+") is not registered.\nTelecommander will register your account with the Telegram service."
-    } else {
-      msg = "Your number ("+data.user.phone+") is already assigned to a Telegram account.\nTelecommander will log you in."
-    }
-    msg += "\nPress ESC to exit now, or enter to continue"
-    data.popup.display(msg,0,function(){
-      data.popup.hide()
-      data.promptBox.input('Your telegram code:','',data.onPhoneCode)
-    })
   })
 }
 
 // Connects to telegram
-data.connect = function(){
-  data.load('Connecting...')
+data.connect = function(re){
+  data.load(re?'Reconnecting...':'Connecting...')
+  if(re){ // RE-connecting, from scratch (drop all data)
+    data.app.authKey = undefined
+  }
   data.client = data.telegramLink.createClient(data.app, data.dataCenter, function(){
     if(!data.app.authKey){
       data.log('Downloading Authorization Key...')
@@ -372,6 +395,7 @@ fs.exists(data.keyFile,function(exists){
           else {
             try {
               data.user = JSON.parse(res)
+              if(data.user.dataCenter) data.dataCenter = data.user.dataCenter
               data.log('Welcome',data.getName(data.user.id,'user'))
             } catch (e) {
               data.log("FATAL: user data corrupted:",e)
