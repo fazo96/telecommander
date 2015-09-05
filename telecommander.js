@@ -217,6 +217,7 @@ data.downloadUpdates = function(){
         for(c in res.other_updates.list) data.onUpdate(res.other_updates.list[c])
       }
       data.rebuildChatList()
+      data.refreshStatusBar()
     }
     setTimeout(data.downloadUpdates,1000)
   })

@@ -17,7 +17,7 @@ As of __now__, __Telecommander lets you__:
 - Sign in with a code sent via SMS or Telegram until you delete the Telecommander session files or the session expires
 - Chat in groups and in private (it also marks messages as read when you read them)
 - Know when you have unread messages
-- View who's online
+- View who's online and when was the last time someone logged in
 - Do everything __completely in the terminal, even via ssh__ using only the keyboard
 - Do everything (except writing messages, duh) using only the mouse, in the terminal!
 - Navigate your contact and chat list
@@ -25,7 +25,6 @@ As of __now__, __Telecommander lets you__:
 
 Waht's missing for version _0.1.0_ (__Almost done!__):
 
-- View when was the last time someone logged in
 - Download latest messages on session start and show unreads
 
 What's missing (for future versions up to 1.0)
