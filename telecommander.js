@@ -82,6 +82,7 @@ data.onPhoneCode = function(something,s){
   if(((!name || !lastname) && !data.user.registered) || !code)
     return log('insufficient arguments:',cmd) // TODO: handle this better!
   var cb = function(result){
+    data.user = data.user || {}
     data.user.id = ''+result.user.id
     data.user.phone = result.user.phone
     data.user.phoneCodeHash = result.phone_code_hash
