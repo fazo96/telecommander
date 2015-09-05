@@ -119,7 +119,8 @@ data.onPhoneNumber = function(something,s){
   var mindate = moment()
   data.log('Checking your phone number with Telegram...')
   data.client.auth.sendCode(data.user.phone,5,'en',function(result){
-    if(result.err_code){
+    if(result.instanceOf('mtproto.type.Rpc_error')){
+      data.switchToBox(data.statusWindow)
       return data.log('Errors:',result.error_code,result.error_message)
     }
     //data.log('Res:',JSON.stringify(result))
