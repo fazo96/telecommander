@@ -32,6 +32,7 @@ Waht's missing for version _0.1.0_ (__Almost done!__):
 What's missing (for future versions up to 1.0)
 
 - Create, modify, manage groups
+- Two step authentication support
 - Secret chats
 - Manage your contacts
 - Manage your profile
